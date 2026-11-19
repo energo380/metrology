@@ -44,15 +44,27 @@ var EDITABLE = ['name', 'serial', 'place', 'd1', 'd2', 'd3', 'd4', 'result', 'no
 var RESULTS = ['', 'Поверен', 'Не прошёл проверку'];
 
 // ============================================================
+// ▶ ЗАПУСК В РЕДАКТОРЕ: выберите в списке функций вверху
+//     setup  - создать таблицу (первый раз) и загрузить данные
+//     check  - проверить, всё ли в порядке
+//   и нажмите «Выполнить». Остальные функции служебные
+//   (имя с «_» на конце) - в списке их не видно.
+// ============================================================
+
+function setup() { runSetup_(); }
+
+function check() { runCheck_(); }
+
+// ============================================================
 // ВХОД
 // ============================================================
 
 function doGet(e) {
   var p = (e && e.parameter) || {};
-  return output(route(p), p.callback);
+  return output_(route_(p), p.callback);
 }
 
-function output(obj, callback) {
+function output_(obj, callback) {
   var json = JSON.stringify(obj);
   if (callback && /^[A-Za-z_$][\w$]*$/.test(callback)) {
     return ContentService.createTextOutput(callback + '(' + json + ');')
@@ -61,19 +73,19 @@ function output(obj, callback) {
   return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
 }
 
-function route(p) {
+function route_(p) {
   try {
-    var ctx = context();
-    var user = findUser(ctx, p.password);
+    var ctx = context_();
+    var user = findUser_(ctx, p.password);
     if (!user) return { success: false, error: 'Неверный пароль' };
 
     switch (p.action) {
-      case 'init':   return init(ctx, user);
-      case 'list':   return { success: true, records: readAll(ctx).records, today: ctx.today };
-      case 'save':   return withLock(function () { return saveRecord(context(), user, parseData(p.data)); });
-      case 'bulk':   return withLock(function () { return bulkStage(context(), user, parseData(p.data)); });
-      case 'delete': return withLock(function () { return deleteRecord(context(), user, p.id); });
-      case 'log':    return getLog(ctx, user, p.id);
+      case 'init':   return init_(ctx, user);
+      case 'list':   return { success: true, records: readAll_(ctx).records, today: ctx.today };
+      case 'save':   return withLock_(function () { return saveRecord_(context_(), user, parseData_(p.data)); });
+      case 'bulk':   return withLock_(function () { return bulkStage_(context_(), user, parseData_(p.data)); });
+      case 'delete': return withLock_(function () { return deleteRecord_(context_(), user, p.id); });
+      case 'log':    return getLog_(ctx, user, p.id);
     }
     return { success: false, error: 'Неизвестное действие' };
   } catch (err) {
@@ -81,11 +93,11 @@ function route(p) {
   }
 }
 
-function parseData(text) {
+function parseData_(text) {
   try { return JSON.parse(text || '{}'); } catch (e) { return {}; }
 }
 
-function withLock(fn) {
+function withLock_(fn) {
   var lock = LockService.getScriptLock();
   try { lock.waitLock(25000); } catch (e) {
     return { success: false, error: 'Сервер занят, повторите через несколько секунд' };
@@ -98,7 +110,7 @@ function withLock(fn) {
 // ============================================================
 
 // Таблица: та, к которой привязан скрипт, или созданная функцией setup()
-function openBook() {
+function openBook_() {
   var ss = null;
   try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) { ss = null; }
   if (ss) return ss;
@@ -107,8 +119,8 @@ function openBook() {
   return SpreadsheetApp.openById(id);
 }
 
-function context() {
-  var ss = openBook();
+function context_() {
+  var ss = openBook_();
   var tz = ss.getSpreadsheetTimeZone() || 'Asia/Novosibirsk';
   var now = new Date();
   var ctx = {
@@ -128,7 +140,7 @@ function context() {
   return ctx;
 }
 
-function readUsers(ctx) {
+function readUsers_(ctx) {
   var sh = ctx.ss.getSheetByName(SH_USERS);
   if (!sh || sh.getLastRow() < 2) return [];
   return sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues()
@@ -145,17 +157,17 @@ function readUsers(ctx) {
     });
 }
 
-function findUser(ctx, password) {
+function findUser_(ctx, password) {
   password = String(password || '').trim();
   if (!password) return null;
-  var users = readUsers(ctx);
+  var users = readUsers_(ctx);
   for (var i = 0; i < users.length; i++) {
     if (users[i].password === password) return users[i];
   }
   return null;
 }
 
-function readPlaces(ctx) {
+function readPlaces_(ctx) {
   var sh = ctx.ss.getSheetByName(SH_PLACES);
   if (!sh || sh.getLastRow() < 2) return [];
   var seen = {};
@@ -164,26 +176,26 @@ function readPlaces(ctx) {
     .filter(function (v) { if (!v || seen[v]) return false; seen[v] = 1; return true; });
 }
 
-function init(ctx, user) {
-  var people = readUsers(ctx)
+function init_(ctx, user) {
+  var people = readUsers_(ctx)
     .filter(function (u) { return u.role === 'metrolog'; })
     .map(function (u) { return u.name; });
   return {
     success: true,
     user: { name: user.name, role: user.role },
     people: people,
-    places: readPlaces(ctx),
+    places: readPlaces_(ctx),
     settings: ctx.settings,
     today: ctx.today,
-    records: readAll(ctx).records
+    records: readAll_(ctx).records
   };
 }
 
 // Кто вносит: метролог выбирает из списка метрологов, по умолчанию - он сам
-function resolveBy(ctx, user, by) {
+function resolveBy_(ctx, user, by) {
   by = String(by || '').trim();
   if (!by) return user.name;
-  var ok = readUsers(ctx).some(function (u) { return u.name === by; });
+  var ok = readUsers_(ctx).some(function (u) { return u.name === by; });
   return ok ? by : user.name;
 }
 
@@ -191,7 +203,7 @@ function resolveBy(ctx, user, by) {
 // ДАТЫ И РАСЧЁТЫ
 // ============================================================
 
-function toIso(v, tz) {
+function toIso_(v, tz) {
   if (v === null || v === undefined || v === '') return '';
   if (Object.prototype.toString.call(v) === '[object Date]') {
     return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, tz, 'yyyy-MM-dd');
@@ -200,14 +212,14 @@ function toIso(v, tz) {
   if ((m = s.match(/^(\d{4})-(\d{2})-(\d{2})/))) return m[1] + '-' + m[2] + '-' + m[3];
   if ((m = s.match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/))) {
     var y = Number(m[3]); if (y < 100) y += 2000;
-    return y + '-' + pad2(m[2]) + '-' + pad2(m[1]);
+    return y + '-' + pad2_(m[2]) + '-' + pad2_(m[1]);
   }
   return '';
 }
 
-function pad2(n) { n = String(n); return n.length < 2 ? '0' + n : n; }
+function pad2_(n) { n = String(n); return n.length < 2 ? '0' + n : n; }
 
-function validIso(s) {
+function validIso_(s) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
   var p = s.split('-').map(Number);
   var d = new Date(Date.UTC(p[0], p[1] - 1, p[2]));
@@ -215,19 +227,19 @@ function validIso(s) {
          p[0] >= 2000 && p[0] <= 2100;
 }
 
-function dayNum(iso) {
+function dayNum_(iso) {
   var p = iso.split('-').map(Number);
   return Math.round(Date.UTC(p[0], p[1] - 1, p[2]) / 86400000);
 }
 
-function fmtStamp(v, tz, pattern) {
+function fmtStamp_(v, tz, pattern) {
   if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) {
     return Utilities.formatDate(v, tz, pattern || 'dd.MM.yyyy HH:mm');
   }
   return v ? String(v) : '';
 }
 
-function calcStatus(r) {
+function calcStatus_(r) {
   if ((r.d2 && r.d1 && r.d2 < r.d1) || (r.d3 && r.d2 && r.d3 < r.d2) || (r.d4 && r.d3 && r.d4 < r.d3)) {
     return 'Некорректная дата';
   }
@@ -238,30 +250,30 @@ function calcStatus(r) {
   return '-';
 }
 
-function calcDays(r) {
+function calcDays_(r) {
   if (!r.d1) return '';
   var max = r.d1;
   DATES.forEach(function (k) { if (r[k] && r[k] > max) max = r[k]; });
-  return max === r.d1 ? '' : dayNum(max) - dayNum(r.d1);
+  return max === r.d1 ? '' : dayNum_(max) - dayNum_(r.d1);
 }
 
-function isLocked(ctx, r) {
-  return !!r.d4 && (dayNum(ctx.today) - dayNum(r.d4)) > ctx.settings.lockDays;
+function isLocked_(ctx, r) {
+  return !!r.d4 && (dayNum_(ctx.today) - dayNum_(r.d4)) > ctx.settings.lockDays;
 }
 
-function validate(ctx, r) {
+function validate_(ctx, r) {
   if (!r.name) return 'Укажите наименование СИ';
   for (var i = 0; i < DATES.length; i++) {
     var k = DATES[i];
-    if (r[k] && !validIso(r[k])) return 'Неверная дата в поле «' + LABEL[k] + '»';
+    if (r[k] && !validIso_(r[k])) return 'Неверная дата в поле «' + LABEL[k] + '»';
   }
   if (!r.d1 && (r.d2 || r.d3 || r.d4)) return 'Сначала заполните дату этапа «' + LABEL.d1 + '»';
   var prev = null;
-  var tomorrow = dayNum(ctx.today) + 1;
+  var tomorrow = dayNum_(ctx.today) + 1;
   for (var j = 0; j < DATES.length; j++) {
     var key = DATES[j];
     if (!r[key]) continue;
-    if (dayNum(r[key]) > tomorrow) return 'Дата «' + LABEL[key] + '» ещё не наступила';
+    if (dayNum_(r[key]) > tomorrow) return 'Дата «' + LABEL[key] + '» ещё не наступила';
     if (prev && r[key] < r[prev]) {
       return 'Дата «' + LABEL[key] + '» раньше даты «' + LABEL[prev] + '»';
     }
@@ -274,14 +286,14 @@ function validate(ctx, r) {
 // ЧТЕНИЕ И ЗАПИСЬ СТРОК
 // ============================================================
 
-function dataSheet(ctx) {
+function dataSheet_(ctx) {
   var sh = ctx.ss.getSheetByName(SH_DATA);
   if (!sh) throw new Error('Нет листа «' + SH_DATA + '»');
   return sh;
 }
 
-function readAll(ctx) {
-  var sh = dataSheet(ctx);
+function readAll_(ctx) {
+  var sh = dataSheet_(ctx);
   var last = sh.getLastRow();
   var list = [], rows = {};
   if (last < 2) return { records: list, raw: list, rows: rows };
@@ -296,19 +308,19 @@ function readAll(ctx) {
     r.num = Number(r.num) || 0;
     ['name', 'serial', 'place', 'result', 'note', 'changes', 'createdBy', 'updatedBy', 'clientId']
       .forEach(function (f) { r[f] = r[f] === null || r[f] === undefined ? '' : String(r[f]); });
-    DATES.forEach(function (k) { r[k] = toIso(r[k], ctx.tz); });
+    DATES.forEach(function (k) { r[k] = toIso_(r[k], ctx.tz); });
     r._row = i + 2;
     raw.push(r);
     rows[r.id] = r;
   }
-  return { records: raw.map(function (r) { return toClient(ctx, r); }), raw: raw, rows: rows };
+  return { records: raw.map(function (r) { return toClient_(ctx, r); }), raw: raw, rows: rows };
 }
 
 // Отметка версии записи: меняется при любом изменении содержимого.
 // Если запись успели поменять с другого компьютера - сохранение не затрёт чужую правку
-function stampOf(ctx, r) {
+function stampOf_(ctx, r) {
   var s = EDITABLE.map(function (f) { return String(r[f] || ''); }).join('\u0001') + '\u0001' +
-          String(r.updatedBy || '') + '\u0001' + fmtStamp(r.updatedAt || r.createdAt, ctx.tz, 'yyyy-MM-dd HH:mm:ss');
+          String(r.updatedBy || '') + '\u0001' + fmtStamp_(r.updatedAt || r.createdAt, ctx.tz, 'yyyy-MM-dd HH:mm:ss');
   var h1 = 5381, h2 = 52711;
   for (var i = 0; i < s.length; i++) {
     var c = s.charCodeAt(i);
@@ -318,54 +330,54 @@ function stampOf(ctx, r) {
   return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36);
 }
 
-function toClient(ctx, r) {
+function toClient_(ctx, r) {
   return {
     id: r.id, num: r.num, name: r.name, serial: r.serial, place: r.place,
     d1: r.d1, d2: r.d2, d3: r.d3, d4: r.d4,
-    days: calcDays(r), status: calcStatus(r),
+    days: calcDays_(r), status: calcStatus_(r),
     result: r.result, note: r.note, changes: r.changes,
-    createdBy: r.createdBy, createdAt: fmtStamp(r.createdAt, ctx.tz),
-    updatedBy: r.updatedBy, updatedAt: fmtStamp(r.updatedAt, ctx.tz),
-    stamp: stampOf(ctx, r),
-    locked: isLocked(ctx, r)
+    createdBy: r.createdBy, createdAt: fmtStamp_(r.createdAt, ctx.tz),
+    updatedBy: r.updatedBy, updatedAt: fmtStamp_(r.updatedAt, ctx.tz),
+    stamp: stampOf_(ctx, r),
+    locked: isLocked_(ctx, r)
   };
 }
 
-function safeText(s) {
+function safeText_(s) {
   s = String(s === null || s === undefined ? '' : s);
   return /^[=+\-@]/.test(s) ? "'" + s : s;
 }
 
-function rowValues(ctx, r) {
+function rowValues_(ctx, r) {
   return FIELDS.map(function (f) {
     if (DATES.indexOf(f) >= 0) {
       return r[f] ? Utilities.parseDate(r[f], ctx.tz, 'yyyy-MM-dd') : '';
     }
-    if (f === 'days') return calcDays(r);
-    if (f === 'status') return calcStatus(r);
+    if (f === 'days') return calcDays_(r);
+    if (f === 'status') return calcStatus_(r);
     if (f === 'num') return r.num;
     if (f === 'createdAt' || f === 'updatedAt') return r[f] || '';
-    return safeText(r[f]);
+    return safeText_(r[f]);
   });
 }
 
 // Лист Google создаётся с ограниченным числом строк - добавляем, когда кончаются
-function ensureRows(sh, lastRowNeeded) {
+function ensureRows_(sh, lastRowNeeded) {
   var max = sh.getMaxRows();
   if (lastRowNeeded > max) sh.insertRowsAfter(max, Math.max(lastRowNeeded - max, 200));
 }
 
-function writeRow(ctx, sh, rowIndex, r) {
-  ensureRows(sh, rowIndex);
+function writeRow_(ctx, sh, rowIndex, r) {
+  ensureRows_(sh, rowIndex);
   var range = sh.getRange(rowIndex, 1, 1, NCOL);
   sh.getRange(rowIndex, COL.serial).setNumberFormat('@');
-  range.setValues([rowValues(ctx, r)]);
+  range.setValues([rowValues_(ctx, r)]);
   sh.getRange(rowIndex, COL.d1, 1, 4).setNumberFormat('dd.mm.yyyy');
   sh.getRange(rowIndex, COL.createdAt).setNumberFormat('dd.mm.yyyy hh:mm');
   sh.getRange(rowIndex, COL.updatedAt).setNumberFormat('dd.mm.yyyy hh:mm');
 }
 
-function writeLog(ctx, entries) {
+function writeLog_(ctx, entries) {
   if (!entries.length) return;
   var sh = ctx.ss.getSheetByName(SH_LOG);
   if (!sh) {
@@ -373,15 +385,15 @@ function writeLog(ctx, entries) {
     sh.getRange(1, 1, 1, 9).setValues([['Когда', 'Кто', 'Роль', 'ID', '№', 'Действие', 'Поле', 'Было', 'Стало']]);
   }
   var start = sh.getLastRow() + 1;
-  ensureRows(sh, start + entries.length - 1);
+  ensureRows_(sh, start + entries.length - 1);
   sh.getRange(start, 1, entries.length, 9).setValues(entries.map(function (e) {
     return [ctx.now, e.who, e.role, e.id, e.num, e.action, e.field || '',
-            safeText(e.from), safeText(e.to)];
+            safeText_(e.from), safeText_(e.to)];
   }));
   sh.getRange(start, 1, entries.length, 1).setNumberFormat('dd.mm.yyyy hh:mm:ss');
 }
 
-function shownValue(field, v) {
+function shownValue_(field, v) {
   if (DATES.indexOf(field) >= 0 && v) {
     var p = v.split('-');
     return p[2] + '.' + p[1] + '.' + p[0];
@@ -389,7 +401,7 @@ function shownValue(field, v) {
   return v || '';
 }
 
-function cleanInput(d) {
+function cleanInput_(d) {
   var out = {};
   out.name = String(d.name || '').replace(/\s+/g, ' ').trim().slice(0, 300);
   out.serial = String(d.serial || '').trim().slice(0, 100);
@@ -400,23 +412,23 @@ function cleanInput(d) {
   return out;
 }
 
-function copyRec(r) {
+function copyRec_(r) {
   var c = {};
   for (var k in r) c[k] = r[k];
   return c;
 }
 
-function roleName(user) { return user.role === 'admin' ? 'администратор' : 'метролог'; }
+function roleName_(user) { return user.role === 'admin' ? 'администратор' : 'метролог'; }
 
 // ============================================================
 // ДЕЙСТВИЯ
 // ============================================================
 
-function saveRecord(ctx, user, d) {
-  var all = readAll(ctx);
-  var sh = dataSheet(ctx);
-  var by = resolveBy(ctx, user, d.by);
-  var input = cleanInput(d);
+function saveRecord_(ctx, user, d) {
+  var all = readAll_(ctx);
+  var sh = dataSheet_(ctx);
+  var by = resolveBy_(ctx, user, d.by);
+  var input = cleanInput_(d);
   var isNew = !d.id;
   var rec, old = null;
 
@@ -424,7 +436,7 @@ function saveRecord(ctx, user, d) {
     if (d.clientId) {
       for (var i = 0; i < all.raw.length; i++) {
         if (all.raw[i].clientId === String(d.clientId)) {
-          return { success: true, duplicate: true, record: toClient(ctx, all.raw[i]) };
+          return { success: true, duplicate: true, record: toClient_(ctx, all.raw[i]) };
         }
       }
     }
@@ -432,25 +444,25 @@ function saveRecord(ctx, user, d) {
   } else {
     old = all.rows[String(d.id)];
     if (!old) return { success: false, gone: true, error: 'Запись не найдена - возможно, её удалили. Обновите журнал.' };
-    if (d.stamp && d.stamp !== stampOf(ctx, old)) {
+    if (d.stamp && d.stamp !== stampOf_(ctx, old)) {
       return {
-        success: false, conflict: true, record: toClient(ctx, old),
+        success: false, conflict: true, record: toClient_(ctx, old),
         error: 'Эту запись уже изменил(а) ' + (old.updatedBy || old.createdBy) + ' (' +
-               fmtStamp(old.updatedAt || old.createdAt, ctx.tz) + '). Данные обновлены - проверьте и сохраните ещё раз.'
+               fmtStamp_(old.updatedAt || old.createdAt, ctx.tz) + '). Данные обновлены - проверьте и сохраните ещё раз.'
       };
     }
-    if (isLocked(ctx, old) && user.role !== 'admin') {
+    if (isLocked_(ctx, old) && user.role !== 'admin') {
       return {
-        success: false, locked: true, record: toClient(ctx, old),
+        success: false, locked: true, record: toClient_(ctx, old),
         error: 'Запись закрыта: прибор выдан в цех больше ' + ctx.settings.lockDays +
                ' дней назад. Исправить может только администратор.'
       };
     }
-    rec = copyRec(old);
+    rec = copyRec_(old);
   }
 
   EDITABLE.forEach(function (f) { rec[f] = input[f]; });
-  var err = validate(ctx, rec);
+  var err = validate_(ctx, rec);
   if (err) return { success: false, error: err };
 
   var entries = [];
@@ -469,96 +481,96 @@ function saveRecord(ctx, user, d) {
     rec.updatedBy = '';
     rec.updatedAt = '';
     rec.clientId = String(d.clientId || '');
-    writeRow(ctx, sh, Math.max(sh.getLastRow() + 1, 2), rec);
-    entries.push({ who: by, role: roleName(user), id: rec.id, num: rec.num, action: 'Добавлен',
+    writeRow_(ctx, sh, Math.max(sh.getLastRow() + 1, 2), rec);
+    entries.push({ who: by, role: roleName_(user), id: rec.id, num: rec.num, action: 'Добавлен',
                    to: rec.name + (rec.serial ? ', зав.№ ' + rec.serial : '') });
   } else {
     EDITABLE.forEach(function (f) {
       if (String(old[f] || '') !== String(rec[f] || '')) {
-        entries.push({ who: by, role: roleName(user), id: rec.id, num: rec.num, action: 'Изменён',
-                       field: LABEL[f], from: shownValue(f, old[f]), to: shownValue(f, rec[f]) });
+        entries.push({ who: by, role: roleName_(user), id: rec.id, num: rec.num, action: 'Изменён',
+                       field: LABEL[f], from: shownValue_(f, old[f]), to: shownValue_(f, rec[f]) });
       }
     });
-    if (!entries.length) return { success: true, unchanged: true, record: toClient(ctx, old) };
-    if (isLocked(ctx, old)) {
-      var mark = 'Корректировка администратором ' + fmtStamp(ctx.now, ctx.tz);
+    if (!entries.length) return { success: true, unchanged: true, record: toClient_(ctx, old) };
+    if (isLocked_(ctx, old)) {
+      var mark = 'Корректировка администратором ' + fmtStamp_(ctx.now, ctx.tz);
       rec.changes = rec.changes ? rec.changes + '\n' + mark : mark;
     }
     rec.updatedBy = by;
     rec.updatedAt = ctx.now;
-    writeRow(ctx, sh, old._row, rec);
+    writeRow_(ctx, sh, old._row, rec);
   }
-  writeLog(ctx, entries);
-  return { success: true, record: toClient(ctx, rec) };
+  writeLog_(ctx, entries);
+  return { success: true, record: toClient_(ctx, rec) };
 }
 
 // Массовая отметка этапа: несколько приборов, один этап, одна дата
-function bulkStage(ctx, user, d) {
+function bulkStage_(ctx, user, d) {
   var stage = Number(d.stage);
   if (!(stage >= 1 && stage <= 4)) return { success: false, error: 'Не выбран этап' };
   var key = 'd' + stage;
   var date = String(d.date || '').trim();
-  if (date && !validIso(date)) return { success: false, error: 'Неверная дата' };
+  if (date && !validIso_(date)) return { success: false, error: 'Неверная дата' };
   var setResult = d.result === undefined || d.result === null || d.result === 'keep'
     ? null : (RESULTS.indexOf(String(d.result)) >= 0 ? String(d.result) : null);
   var ids = Array.isArray(d.ids) ? d.ids.map(String) : [];
   if (!ids.length) return { success: false, error: 'Не выбраны приборы' };
   if (ids.length > 500) return { success: false, error: 'Не больше 500 приборов за раз' };
 
-  var all = readAll(ctx);
-  var sh = dataSheet(ctx);
-  var by = resolveBy(ctx, user, d.by);
+  var all = readAll_(ctx);
+  var sh = dataSheet_(ctx);
+  var by = resolveBy_(ctx, user, d.by);
   var updated = [], errors = [], entries = [];
 
   ids.forEach(function (id) {
     var old = all.rows[id];
     if (!old) { errors.push({ id: id, num: '', error: 'запись не найдена' }); return; }
-    if (isLocked(ctx, old) && user.role !== 'admin') {
+    if (isLocked_(ctx, old) && user.role !== 'admin') {
       errors.push({ id: id, num: old.num, error: 'запись закрыта' }); return;
     }
-    var rec = copyRec(old);
+    var rec = copyRec_(old);
     rec[key] = date;
     if (setResult !== null) rec.result = setResult;
-    var err = validate(ctx, rec);
+    var err = validate_(ctx, rec);
     if (err) { errors.push({ id: id, num: old.num, error: err }); return; }
 
     var changed = [];
     if (old[key] !== rec[key]) changed.push(key);
     if (old.result !== rec.result) changed.push('result');
-    if (!changed.length) { updated.push(toClient(ctx, old)); return; }
+    if (!changed.length) { updated.push(toClient_(ctx, old)); return; }
 
     changed.forEach(function (f) {
-      entries.push({ who: by, role: roleName(user), id: rec.id, num: rec.num, action: 'Изменён (группой)',
-                     field: LABEL[f], from: shownValue(f, old[f]), to: shownValue(f, rec[f]) });
+      entries.push({ who: by, role: roleName_(user), id: rec.id, num: rec.num, action: 'Изменён (группой)',
+                     field: LABEL[f], from: shownValue_(f, old[f]), to: shownValue_(f, rec[f]) });
     });
-    if (isLocked(ctx, old)) {
-      var mark = 'Корректировка администратором ' + fmtStamp(ctx.now, ctx.tz);
+    if (isLocked_(ctx, old)) {
+      var mark = 'Корректировка администратором ' + fmtStamp_(ctx.now, ctx.tz);
       rec.changes = rec.changes ? rec.changes + '\n' + mark : mark;
     }
     rec.updatedBy = by;
     rec.updatedAt = ctx.now;
-    writeRow(ctx, sh, old._row, rec);
-    updated.push(toClient(ctx, rec));
+    writeRow_(ctx, sh, old._row, rec);
+    updated.push(toClient_(ctx, rec));
   });
 
-  writeLog(ctx, entries);
+  writeLog_(ctx, entries);
   return { success: true, updated: updated, errors: errors };
 }
 
-function deleteRecord(ctx, user, id) {
+function deleteRecord_(ctx, user, id) {
   if (user.role !== 'admin') return { success: false, error: 'Удалять записи может только администратор' };
-  var all = readAll(ctx);
+  var all = readAll_(ctx);
   var old = all.rows[String(id || '')];
   if (!old) return { success: false, gone: true, error: 'Запись уже удалена' };
-  dataSheet(ctx).deleteRow(old._row);
-  writeLog(ctx, [{
-    who: user.name, role: roleName(user), id: old.id, num: old.num, action: 'Удалён',
+  dataSheet_(ctx).deleteRow(old._row);
+  writeLog_(ctx, [{
+    who: user.name, role: roleName_(user), id: old.id, num: old.num, action: 'Удалён',
     from: old.name + (old.serial ? ', зав.№ ' + old.serial : '') + (old.place ? ', ' + old.place : '')
   }]);
   return { success: true, id: old.id };
 }
 
-function getLog(ctx, user, id) {
+function getLog_(ctx, user, id) {
   if (user.role !== 'admin') return { success: false, error: 'Журнал правок доступен только администратору' };
   var sh = ctx.ss.getSheetByName(SH_LOG);
   if (!sh || sh.getLastRow() < 2) return { success: true, entries: [] };
@@ -568,7 +580,7 @@ function getLog(ctx, user, id) {
     var v = values[i];
     if (id && String(v[3]) !== String(id)) continue;
     out.push({
-      when: fmtStamp(v[0], ctx.tz), who: String(v[1]), role: String(v[2]), id: String(v[3]),
+      when: fmtStamp_(v[0], ctx.tz), who: String(v[1]), role: String(v[2]), id: String(v[3]),
       num: v[4], action: String(v[5]), field: String(v[6]), from: String(v[7]), to: String(v[8])
     });
   }
@@ -604,7 +616,7 @@ WIDTHS[SH_PLACES] = [300];
 WIDTHS[SH_LOG] = [130, 150, 110, 60, 45, 130, 160, 220, 220];
 WIDTHS[SH_SET] = [180, 260, 520];
 
-function setup() {
+function runSetup_() {
   var ss = null, created = false;
   try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) { ss = null; }
   if (!ss) {
@@ -622,7 +634,7 @@ function setup() {
   [SH_DATA, SH_USERS, SH_PLACES, SH_LOG, SH_SET].forEach(function (name) {
     var sh = ss.getSheetByName(name);
     if (!sh) { sh = ss.insertSheet(name); report.push('создан лист «' + name + '»'); }
-    prepareSheet(sh, name);
+    prepareSheet_(sh, name);
   });
 
   // пустой лист по умолчанию больше не нужен
@@ -663,7 +675,7 @@ function setup() {
   var data = ss.getSheetByName(SH_DATA);
   var imported = 0;
   if (data.getLastRow() < 2 && typeof IMPORT_DATA !== 'undefined' && IMPORT_DATA.length) {
-    imported = importRows(ss, data, IMPORT_DATA);
+    imported = importRows_(ss, data, IMPORT_DATA);
     report.push('перенесено записей из Excel: ' + imported);
   }
 
@@ -690,7 +702,7 @@ function setup() {
   check();
 }
 
-function prepareSheet(sh, name) {
+function prepareSheet_(sh, name) {
   var head = HEADERS[name];
   var current = sh.getRange(1, 1, 1, head.length).getValues()[0];
   if (current.join('') === '') sh.getRange(1, 1, 1, head.length).setValues([head]);
@@ -742,7 +754,7 @@ function prepareSheet(sh, name) {
 }
 
 // Строка импорта: [№, наименование, зав.№, место, д1, д2, д3, д4, примечание, дополнение, изменения]
-function importRows(ss, sh, list) {
+function importRows_(ss, sh, list) {
   var tz = ss.getSpreadsheetTimeZone();
   var now = new Date();
   var values = list.map(function (x, i) {
@@ -750,9 +762,9 @@ function importRows(ss, sh, list) {
               name: x[1], serial: x[2], place: x[3], d1: x[4], d2: x[5], d3: x[6], d4: x[7],
               result: x[8], note: x[9], changes: x[10],
               createdBy: 'Перенос из Excel', createdAt: now, updatedBy: '', updatedAt: '', clientId: '' };
-    return rowValues({ tz: tz }, r);
+    return rowValues_({ tz: tz }, r);
   });
-  ensureRows(sh, values.length + 1);
+  ensureRows_(sh, values.length + 1);
   sh.getRange(2, COL.serial, values.length, 1).setNumberFormat('@');
   sh.getRange(2, 1, values.length, NCOL).setValues(values);
   return values.length;
@@ -762,21 +774,21 @@ function importRows(ss, sh, list) {
 // ПРОВЕРКА: выберите функцию check и нажмите «Выполнить»
 // ============================================================
 
-function check() {
-  var ctx = context();
+function runCheck_() {
+  var ctx = context_();
   var problems = [];
   [SH_DATA, SH_USERS, SH_PLACES, SH_LOG, SH_SET].forEach(function (n) {
     if (!ctx.ss.getSheetByName(n)) problems.push('нет листа «' + n + '»');
   });
-  var users = readUsers(ctx);
+  var users = readUsers_(ctx);
   var seen = {};
   users.forEach(function (u) {
     if (seen[u.password]) problems.push('одинаковый пароль у «' + seen[u.password] + '» и «' + u.name + '»');
     seen[u.password] = u.name;
   });
   if (!users.some(function (u) { return u.role === 'admin'; })) problems.push('нет администратора');
-  var n = ctx.ss.getSheetByName(SH_DATA) ? readAll(ctx).records.length : 0;
+  var n = ctx.ss.getSheetByName(SH_DATA) ? readAll_(ctx).records.length : 0;
   Logger.log('Часовой пояс таблицы: ' + ctx.tz + ', сегодня: ' + ctx.today);
-  Logger.log('Записей: ' + n + ', пользователей: ' + users.length + ', мест: ' + readPlaces(ctx).length);
+  Logger.log('Записей: ' + n + ', пользователей: ' + users.length + ', мест: ' + readPlaces_(ctx).length);
   Logger.log(problems.length ? 'ЕСТЬ ЗАМЕЧАНИЯ: ' + problems.join('; ') : 'Всё в порядке');
 }
