@@ -1,5 +1,5 @@
 <!-- ============================================================
-     INDEX.HTML - Журнал движения СИ при поверке в ЦСМ, версия 1.0
+     INDEX.HTML - Журнал движения СИ при поверке в ЦСМ, версия 1.1
      АО "Новосибирская птицефабрика", метрология
      Нужен серверный скрипт Code.gs v1.0 (Google Apps Script)
 
@@ -15,6 +15,11 @@
        7. Через N дней после выдачи в цех запись закрывается:
           исправить может только администратор
        8. Администратор: удаление и журнал правок (кто, когда, что)
+       9. Очередь отправки: всё сначала пишется в память браузера и
+          уходит на сервер само, при обрыве связи - повторы. Ключи
+          памяти с приставкой npf-metrology-si-k7q2, чтобы не путаться
+          со «Снабжением» (у всех сайтов github.io общая память)
+      10. Сначала 30 последних приборов, «Показать ещё 30»
      ============================================================ -->
 <!DOCTYPE html>
 <html lang="ru">
@@ -22,12 +27,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Движение СИ - метрология</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='29' fill='%231a73c8' stroke='%23e1f6ff' stroke-width='4'/%3E%3Cpath d='M15 43a19 19 0 1 1 34 0' fill='none' stroke='%23e1f6ff' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M41 21.5a19 19 0 0 1 8 21.5' fill='none' stroke='%23ff6e6e' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M32 34 45 22' stroke='%23ffffff' stroke-width='4.5' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='34' r='5' fill='%23ffffff'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#1a73c8">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    background: linear-gradient(165deg, #0b4f96 0%, #1a73c8 45%, #3aa3e3 80%, #6cc6f2 100%);
     background-attachment: fixed;
     min-height: 100vh;
     color: #ffffff;
@@ -48,24 +55,24 @@ button, input, select, textarea { font-family: inherit; }
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 .grad-text {
-    background: linear-gradient(90deg, #00d4ff, #00ff88);
+    background: linear-gradient(90deg, #ffffff, #c9f0ff);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
 }
 .login-box h1 { text-align: center; margin-bottom: 10px; font-size: 24px; }
-.login-box h2 { text-align: center; margin-bottom: 30px; font-size: 14px; color: #aaa; font-weight: normal; line-height: 1.5; }
+.login-box h2 { text-align: center; margin-bottom: 30px; font-size: 14px; color: rgba(255,255,255,.75); font-weight: normal; line-height: 1.5; }
 .login-box input {
     width: 100%; padding: 15px; border: none; border-radius: 10px;
     background: rgba(255, 255, 255, 0.1); color: #fff; font-size: 16px; transition: all 0.3s ease;
 }
-.login-box input:focus { outline: none; background: rgba(255, 255, 255, 0.2); box-shadow: 0 0 20px rgba(0, 212, 255, 0.3); }
-.login-box input::placeholder { color: #888; }
+.login-box input:focus { outline: none; background: rgba(255, 255, 255, 0.2); box-shadow: 0 0 20px rgba(201, 240, 255, 0.3); }
+.login-box input::placeholder { color: rgba(255,255,255,.62); }
 .pass-field { position: relative; margin-bottom: 20px; }
 .pass-field input { padding-right: 52px; }
 .pass-eye {
     position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-    padding: 8px; border: 0; border-radius: 8px; background: none; color: #aaa; cursor: pointer;
+    padding: 8px; border: 0; border-radius: 8px; background: none; color: rgba(255,255,255,.75); cursor: pointer;
 }
 .pass-eye:hover { color: #fff; }
 .pass-eye svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -73,21 +80,21 @@ button, input, select, textarea { font-family: inherit; }
 .pass-eye[aria-pressed="true"] .i-hide { display: block; }
 .login-btn {
     width: 100%; padding: 15px; border: none; border-radius: 10px;
-    background: linear-gradient(90deg, #00d4ff, #00ff88); color: #1a1a2e;
+    background: linear-gradient(90deg, #e1f6ff, #8fd8ff); color: #063a6b;
     font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.3s ease;
 }
-.login-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4); }
+.login-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(201, 240, 255, 0.4); }
 .error-message { color: #ff6b6b; text-align: center; margin-top: 15px; font-size: 14px; min-height: 18px; }
 
 /* ---------- основной экран ---------- */
 .main-container { display: none; padding: 20px; max-width: 1640px; margin: 0 auto; }
 .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
 .header h1 { font-size: 24px; }
-.header .sub { color: #888; font-size: 13px; margin-top: 4px; }
+.header .sub { color: rgba(255,255,255,.62); font-size: 13px; margin-top: 4px; }
 .user-info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .user-badge {
-    background: rgba(0, 212, 255, 0.2); padding: 6px 15px; border-radius: 20px;
-    color: #00d4ff; font-weight: bold; font-size: 14px;
+    background: rgba(201, 240, 255, 0.2); padding: 6px 15px; border-radius: 20px;
+    color: #c9f0ff; font-weight: bold; font-size: 14px;
 }
 .user-badge.admin { background: rgba(255, 193, 7, 0.18); color: #ffc107; }
 
@@ -96,8 +103,8 @@ button, input, select, textarea { font-family: inherit; }
     cursor: pointer; transition: all 0.3s ease; display: inline-flex; align-items: center; gap: 8px;
     white-space: nowrap;
 }
-.btn-primary { background: linear-gradient(90deg, #00d4ff, #00ff88); color: #1a1a2e; }
-.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4); }
+.btn-primary { background: linear-gradient(90deg, #e1f6ff, #8fd8ff); color: #063a6b; }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(201, 240, 255, 0.4); }
 .btn-secondary { background: rgba(255, 255, 255, 0.1); color: #fff; border: 1px solid rgba(255, 255, 255, 0.2); }
 .btn-secondary:hover { background: rgba(255, 255, 255, 0.2); }
 .btn-danger { background: rgba(255, 107, 107, 0.2); color: #ff6b6b; border: 1px solid rgba(255, 107, 107, 0.3); }
@@ -108,25 +115,25 @@ button, input, select, textarea { font-family: inherit; }
 /* ---------- сводка ---------- */
 .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
 .tile {
-    background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 14px; padding: 14px 16px; cursor: pointer; transition: all 0.2s ease; text-align: left; color: #fff;
 }
 .tile:hover { background: rgba(255, 255, 255, 0.1); transform: translateY(-2px); }
-.tile.active { border-color: #00d4ff; box-shadow: 0 0 18px rgba(0, 212, 255, 0.25); background: rgba(0, 212, 255, 0.1); }
+.tile.active { border-color: #c9f0ff; box-shadow: 0 0 18px rgba(201, 240, 255, 0.25); background: rgba(201, 240, 255, 0.1); }
 .tile .t-num { font-size: 28px; font-weight: bold; line-height: 1.1; }
-.tile .t-label { font-size: 12px; color: #aaa; margin-top: 4px; line-height: 1.3; }
-.tile.s1 .t-num { color: #7fb2ff; }
-.tile.s2 .t-num { color: #00d4ff; }
-.tile.s3 .t-num { color: #b388ff; }
-.tile.s4 .t-num { color: #00ff88; }
-.tile.warn .t-num { color: #ff6b6b; }
-.tile.fail .t-num { color: #ff8a65; }
-.tile.bad .t-num { color: #ffc000; }
+.tile .t-label { font-size: 12px; color: rgba(255,255,255,.75); margin-top: 4px; line-height: 1.3; }
+.tile.s1 .t-num { color: #dbe9ff; }
+.tile.s2 .t-num { color: #c9f0ff; }
+.tile.s3 .t-num { color: #e6d9ff; }
+.tile.s4 .t-num { color: #a6ffd3; }
+.tile.warn .t-num { color: #ffbdb7; }
+.tile.fail .t-num { color: #ffd0b0; }
+.tile.bad .t-num { color: #ffe48a; }
 
 /* ---------- фильтры ---------- */
 .toolbar {
     display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px;
-    background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 14px; padding: 12px;
 }
 .toolbar input, .toolbar select, .field input, .field select, .field textarea {
@@ -134,58 +141,58 @@ button, input, select, textarea { font-family: inherit; }
     background: rgba(255, 255, 255, 0.1); color: #fff; font-size: 14px; transition: all 0.2s ease;
 }
 .toolbar input:focus, .toolbar select:focus, .field input:focus, .field select:focus, .field textarea:focus {
-    outline: none; background: rgba(255, 255, 255, 0.15); box-shadow: 0 0 15px rgba(0, 212, 255, 0.2);
+    outline: none; background: rgba(255, 255, 255, 0.15); box-shadow: 0 0 15px rgba(201, 240, 255, 0.2);
 }
-.toolbar input::placeholder, .field input::placeholder, .field textarea::placeholder { color: #888; }
-select option { background: #1a1a2e; color: #fff; }
+.toolbar input::placeholder, .field input::placeholder, .field textarea::placeholder { color: rgba(255,255,255,.62); }
+select option { background: #0e4f92; color: #fff; }
 .toolbar .search { flex: 1 1 260px; min-width: 200px; }
 .toolbar select { flex: 0 1 210px; min-width: 150px; }
-.toolbar .count { color: #aaa; font-size: 13px; margin-left: auto; }
+.toolbar .count { color: rgba(255,255,255,.75); font-size: 13px; margin-left: auto; }
 
 /* ---------- таблица ---------- */
 .table-wrap {
     overflow: auto; max-height: calc(100vh - 120px); border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(6, 58, 115, 0.38);
 }
 table.journal { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 1400px; font-size: 13px; }
 .journal th {
-    position: sticky; top: 0; z-index: 2; background: #17284a; color: #00d4ff;
+    position: sticky; top: 0; z-index: 2; background: #0d5aa6; color: #c9f0ff;
     padding: 10px 8px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.15); white-space: nowrap; user-select: none;
 }
 .journal th.sortable { cursor: pointer; }
 .journal th.sortable:hover { color: #fff; }
-.journal th .arrow { color: #00ff88; }
+.journal th .arrow { color: #7dffb8; }
 .journal td { padding: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); vertical-align: top; }
 .journal tbody tr { cursor: pointer; transition: background 0.15s; }
-.journal tbody tr:hover { background: rgba(0, 212, 255, 0.07); }
-.journal tbody tr.selected { background: rgba(0, 255, 136, 0.08); }
+.journal tbody tr:hover { background: rgba(201, 240, 255, 0.07); }
+.journal tbody tr.selected { background: rgba(125, 255, 184, 0.08); }
 .journal .c-chk { width: 34px; text-align: center; cursor: default; }
-.journal .c-num { width: 58px; white-space: nowrap; color: #aaa; }
+.journal .c-num { width: 58px; white-space: nowrap; color: rgba(255,255,255,.75); }
 .journal .c-name { min-width: 200px; font-weight: 600; }
-.journal .c-serial { width: 130px; overflow-wrap: anywhere; }
+.journal .c-serial { width: 140px; min-width: 130px; overflow-wrap: break-word; }
 .journal .c-place { min-width: 150px; color: #ccc; }
 .journal .c-date { width: 88px; white-space: nowrap; text-align: center; }
 .journal .c-days { width: 64px; text-align: center; white-space: nowrap; }
 .journal .c-status { width: 170px; }
 .journal .c-result { width: 120px; }
-.journal .c-note { min-width: 200px; max-width: 320px; color: #bbb; }
+.journal .c-note { min-width: 200px; max-width: 320px; color: rgba(255,255,255,.82); }
 .journal .c-note div { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
 .journal th.c-date { text-align: center; line-height: 1.25; }
-.date-empty { color: #555; }
+.date-empty { color: rgba(255,255,255,.4); }
 .lock { font-size: 11px; opacity: 0.8; }
-input[type="checkbox"] { width: 17px; height: 17px; accent-color: #00d4ff; cursor: pointer; }
+input[type="checkbox"] { width: 17px; height: 17px; accent-color: #c9f0ff; cursor: pointer; }
 
 .chip { display: inline-block; white-space: nowrap; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; line-height: 1.4; }
-.chip.ok { background: rgba(0, 255, 136, 0.18); color: #00ff88; }
-.chip.long { background: rgba(255, 107, 107, 0.2); color: #ff8080; }
-.chip.bad { background: rgba(255, 192, 0, 0.22); color: #ffc000; }
-.chip.plain { background: rgba(255, 255, 255, 0.1); color: #ddd; }
-.chip.fail { background: rgba(255, 107, 107, 0.2); color: #ff6b6b; }
-.overdue { display: block; color: #ff8080; font-size: 11px; margin-top: 3px; }
+.chip.ok { background: rgba(0, 200, 120, 0.38); color: #effff6; }
+.chip.long { background: rgba(255, 82, 82, 0.5); color: #fff; }
+.chip.bad { background: rgba(255, 193, 7, 0.55); color: #fff; }
+.chip.plain { background: rgba(255, 255, 255, 0.2); color: #fff; }
+.chip.fail { background: rgba(255, 82, 82, 0.5); color: #fff; }
+.overdue { display: block; color: #ffd6d2; font-size: 11px; margin-top: 3px; }
 
 .more-row { text-align: center; padding: 14px; }
-.empty { text-align: center; color: #888; padding: 40px 10px; }
+.empty { text-align: center; color: rgba(255,255,255,.62); padding: 40px 10px; }
 
 /* ---------- карточки (телефон) ---------- */
 .cards { display: none; }
@@ -193,38 +200,38 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: #00d4ff; curso
     background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 14px; padding: 14px; margin-bottom: 10px; cursor: pointer;
 }
-.card.selected { border-color: #00ff88; }
+.card.selected { border-color: #7dffb8; }
 .card-top { display: flex; gap: 10px; align-items: flex-start; }
 .card-top .ttl { flex: 1; font-weight: 600; line-height: 1.35; }
-.card-top .num { color: #888; font-size: 12px; font-weight: normal; }
-.card .meta { color: #aaa; font-size: 13px; margin: 6px 0 10px; }
+.card-top .num { color: rgba(255,255,255,.62); font-size: 12px; font-weight: normal; }
+.card .meta { color: rgba(255,255,255,.75); font-size: 13px; margin: 6px 0 10px; }
 .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 10px; }
-.step { text-align: center; font-size: 11px; color: #777; }
+.step { text-align: center; font-size: 11px; color: rgba(255,255,255,.55); }
 .step .bar { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); margin-bottom: 5px; }
 .step.done { color: #ddd; }
-.step.done .bar { background: linear-gradient(90deg, #00d4ff, #00ff88); }
+.step.done .bar { background: linear-gradient(90deg, #b3ecff, #ffffff); }
 .card .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.card .note { color: #aaa; font-size: 12px; margin-top: 8px; white-space: pre-line; }
+.card .note { color: rgba(255,255,255,.75); font-size: 12px; margin-top: 8px; white-space: pre-line; }
 
 /* ---------- панель выбранных ---------- */
 .selbar {
     position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(150%);
-    background: #10213f; border: 1px solid rgba(0, 212, 255, 0.4); border-radius: 16px;
+    background: #0e4f92; border: 1px solid rgba(201, 240, 255, 0.4); border-radius: 16px;
     padding: 10px 14px; display: flex; gap: 10px; align-items: center; z-index: 900;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); transition: transform 0.25s ease; flex-wrap: wrap; justify-content: center;
     max-width: calc(100% - 24px);
 }
 .selbar.show { transform: translateX(-50%) translateY(0); }
-.selbar .sel-count { font-weight: bold; color: #00ff88; }
+.selbar .sel-count { font-weight: bold; color: #7dffb8; }
 
 /* ---------- окна ---------- */
 .modal-overlay {
-    display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(5px);
+    display: none; position: fixed; inset: 0; background: rgba(4, 40, 80, 0.55); backdrop-filter: blur(5px);
     z-index: 1000; justify-content: center; align-items: flex-start; padding: 30px 16px; overflow-y: auto;
 }
 .modal-overlay.active { display: flex; }
 .modal {
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 20px; width: 100%; max-width: 760px;
+    background: linear-gradient(160deg, #0e4f92 0%, #1667b8 100%); border-radius: 20px; width: 100%; max-width: 760px;
     border: 1px solid rgba(255, 255, 255, 0.12); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); margin: auto;
 }
 .modal.wide { max-width: 1000px; }
@@ -232,8 +239,8 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: #00d4ff; curso
     display: flex; justify-content: space-between; align-items: center; gap: 10px;
     padding: 20px 24px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
-.modal-header h2 { font-size: 19px; color: #00d4ff; }
-.modal-close { background: none; border: none; color: #aaa; font-size: 28px; cursor: pointer; line-height: 1; padding: 0 4px; }
+.modal-header h2 { font-size: 19px; color: #c9f0ff; }
+.modal-close { background: none; border: none; color: rgba(255,255,255,.75); font-size: 28px; cursor: pointer; line-height: 1; padding: 0 4px; }
 .modal-close:hover { color: #fff; }
 .modal-body { padding: 20px 24px; }
 .modal-footer {
@@ -245,25 +252,25 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: #00d4ff; curso
 .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
 .grid .full { grid-column: 1 / -1; }
 .field { display: flex; flex-direction: column; gap: 6px; }
-.field > label { color: #aaa; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; }
+.field > label { color: rgba(255,255,255,.75); font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; }
 .field textarea { resize: vertical; min-height: 70px; line-height: 1.4; }
 .field input:disabled, .field select:disabled, .field textarea:disabled { opacity: 0.55; cursor: not-allowed; }
 .req { color: #ff6b6b; }
 
 .stages { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
 .stage-box { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 12px; }
-.stage-box > label { display: block; color: #00d4ff; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.stage-box > label { display: block; color: #c9f0ff; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
 .stage-box > label .n {
     display: inline-flex; width: 22px; height: 22px; border-radius: 50%; align-items: center; justify-content: center;
-    background: rgba(0, 212, 255, 0.2); margin-right: 6px; font-size: 12px;
+    background: rgba(201, 240, 255, 0.2); margin-right: 6px; font-size: 12px;
 }
 .date-field { display: flex; gap: 6px; align-items: center; position: relative; }
 .date-field .date-text {
     flex: 1; min-width: 0; width: 100%; padding: 10px 12px; letter-spacing: 0.5px;
     border: none; border-radius: 10px; background: rgba(255, 255, 255, 0.1); color: #fff; font-size: 14px;
 }
-.date-field .date-text:focus { outline: none; background: rgba(255, 255, 255, 0.15); box-shadow: 0 0 15px rgba(0, 212, 255, 0.2); }
-.date-field .date-text::placeholder { color: #888; }
+.date-field .date-text:focus { outline: none; background: rgba(255, 255, 255, 0.15); box-shadow: 0 0 15px rgba(201, 240, 255, 0.2); }
+.date-field .date-text::placeholder { color: rgba(255,255,255,.62); }
 .date-field .date-text:disabled { opacity: 0.55; cursor: not-allowed; }
 .date-field .date-native { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; right: 0; bottom: 0; }
 .date-btn {
@@ -271,27 +278,27 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: #00d4ff; curso
     background: rgba(255, 255, 255, 0.08); color: #fff; cursor: pointer; font-size: 13px; white-space: nowrap;
 }
 .date-btn:hover { background: rgba(255, 255, 255, 0.18); }
-.date-btn.today { color: #00ff88; border-color: rgba(0, 255, 136, 0.35); }
+.date-btn.today { color: #7dffb8; border-color: rgba(125, 255, 184, 0.35); }
 .date-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .preview {
-    margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: rgba(0, 212, 255, 0.07);
+    margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: rgba(201, 240, 255, 0.07);
     display: flex; gap: 14px; flex-wrap: wrap; align-items: center; font-size: 14px;
 }
 .preview .err { color: #ff6b6b; font-weight: 600; }
 .notice { padding: 12px 14px; border-radius: 12px; margin-bottom: 14px; font-size: 14px; line-height: 1.45; }
 .notice.lock { background: rgba(255, 193, 7, 0.12); border: 1px solid rgba(255, 193, 7, 0.35); color: #ffd54f; }
-.notice.info { background: rgba(0, 212, 255, 0.08); border: 1px solid rgba(0, 212, 255, 0.25); color: #9fe9ff; }
+.notice.info { background: rgba(201, 240, 255, 0.08); border: 1px solid rgba(201, 240, 255, 0.25); color: #9fe9ff; }
 .notice.err { background: rgba(255, 107, 107, 0.12); border: 1px solid rgba(255, 107, 107, 0.35); color: #ff9a9a; }
-.audit { color: #888; font-size: 12px; line-height: 1.5; }
+.audit { color: rgba(255,255,255,.62); font-size: 12px; line-height: 1.5; }
 .changes { white-space: pre-line; color: #ffd54f; font-size: 13px; }
 
 .log-list { max-height: 60vh; overflow-y: auto; }
 .log-item { padding: 10px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.07); font-size: 13px; line-height: 1.5; }
-.log-item .when { color: #888; font-size: 12px; }
-.log-item .who { color: #00d4ff; font-weight: 600; }
+.log-item .when { color: rgba(255,255,255,.62); font-size: 12px; }
+.log-item .who { color: #c9f0ff; font-weight: 600; }
 .log-item .from { color: #ff9a9a; text-decoration: line-through; }
-.log-item .to { color: #00ff88; }
+.log-item .to { color: #7dffb8; }
 
 .bulk-list { max-height: 170px; overflow-y: auto; font-size: 13px; color: #ccc; background: rgba(255, 255, 255, 0.04); border-radius: 10px; padding: 8px 12px; margin-bottom: 14px; }
 .bulk-list div { padding: 3px 0; }
@@ -305,7 +312,7 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: #00d4ff; curso
 }
 .loading-overlay.active { display: flex; }
 .spinner {
-    width: 54px; height: 54px; border: 4px solid rgba(255, 255, 255, 0.15); border-top-color: #00d4ff;
+    width: 54px; height: 54px; border: 4px solid rgba(255, 255, 255, 0.15); border-top-color: #c9f0ff;
     border-radius: 50%; animation: spin 0.9s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -320,6 +327,42 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: #00d4ff; curso
 .toast.info { background: linear-gradient(90deg, #0088cc, #00a8e8); }
 
 #printArea { display: none; }
+
+/* ---------- приборы в оформлении ---------- */
+.bg-dial { position: fixed; right: -140px; bottom: -160px; width: 560px; height: 560px; opacity: 0.09; pointer-events: none; z-index: 0; }
+.bg-dial.left { left: -180px; top: -200px; right: auto; bottom: auto; width: 460px; height: 460px; opacity: 0.06; }
+.login-container, .main-container { position: relative; z-index: 1; }
+.gauge { display: block; }
+.gauge .needle { transform-box: view-box; transform-origin: 60px 60px; }
+.gauge.live .needle { animation: sweep 6s ease-in-out infinite; }
+@keyframes sweep {
+    0% { transform: rotate(-120deg); } 18% { transform: rotate(35deg); } 26% { transform: rotate(18deg); }
+    60% { transform: rotate(48deg); } 80% { transform: rotate(-30deg); } 100% { transform: rotate(-120deg); }
+}
+.login-gauge { width: 128px; height: 128px; margin: -6px auto 14px; filter: drop-shadow(0 6px 18px rgba(0, 40, 90, 0.35)); }
+.login-icons { display: flex; justify-content: center; gap: 18px; margin: -14px 0 22px; color: rgba(255, 255, 255, 0.7); }
+.login-icons svg { width: 22px; height: 22px; }
+.logo { display: inline-flex; align-items: center; gap: 12px; }
+.logo .gauge { width: 42px; height: 42px; flex: none; filter: drop-shadow(0 3px 8px rgba(0, 40, 90, 0.35)); }
+.ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tile { position: relative; overflow: hidden; }
+.tile .t-ico { position: absolute; right: 12px; top: 12px; opacity: 0.55; }
+.tile .t-ico .ico { width: 26px; height: 26px; }
+
+/* ---------- очередь отправки ---------- */
+.q-btn { display: none; }
+.q-btn.show { display: inline-flex; }
+.q-btn.warn { background: rgba(255, 193, 7, 0.25); border-color: rgba(255, 213, 79, 0.6); color: #fff3c4; }
+.q-btn.bad { background: rgba(255, 107, 107, 0.3); border-color: rgba(255, 138, 128, 0.7); color: #fff; }
+tr.pending td, .card.pending { opacity: 0.75; }
+tr.rejected td { background: rgba(255, 107, 107, 0.12); }
+.pend { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 9px; background: rgba(255, 213, 79, 0.25); color: #fff3c4; white-space: nowrap; }
+.pend.bad { background: rgba(255, 107, 107, 0.35); color: #fff; }
+.q-item { padding: 12px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.12); display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.q-item .q-main { flex: 1; min-width: 220px; font-size: 14px; line-height: 1.45; }
+.q-item .q-state { font-size: 12px; color: rgba(255, 255, 255, 0.75); }
+.q-item .q-state.bad { color: #ffb4ab; }
+.q-item .q-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
 @media (max-width: 900px) {
     .main-container { padding: 12px; }
@@ -357,12 +400,16 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: #00d4ff; curso
 </style>
 </head>
 <body>
+<div class="bg-dial left" data-gauge="bg"></div>
+<div class="bg-dial" data-gauge="bg"></div>
 
 <!-- ======================= ВХОД ======================= -->
 <div class="login-container" id="loginScreen">
     <div class="login-box">
-        <h1 class="grad-text">📏 Движение СИ</h1>
+        <div class="login-gauge" data-gauge="live"></div>
+        <h1 class="grad-text">Движение СИ</h1>
         <h2>Журнал поверки в ЦСМ<br>Метрология · АО «Новосибирская птицефабрика»</h2>
+        <div class="login-icons" id="loginIcons"></div>
         <div class="pass-field">
             <input type="password" id="passwordInput" placeholder="Пароль" autocomplete="current-password">
             <button type="button" class="pass-eye" id="passEye" aria-label="Показать пароль" aria-pressed="false" onclick="togglePass()">
@@ -379,7 +426,7 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: #00d4ff; curso
 <div class="main-container" id="mainScreen">
     <div class="header">
         <div>
-            <h1 class="grad-text">📏 Журнал движения СИ при поверке в ЦСМ</h1>
+            <div class="logo"><span class="gauge-wrap" data-gauge="logo"></span><h1 class="grad-text">Журнал движения СИ при поверке в ЦСМ</h1></div>
             <div class="sub" id="headerSub"></div>
         </div>
         <div class="user-info">
@@ -387,6 +434,7 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: #00d4ff; curso
             <button class="btn btn-primary" onclick="openRecord(null)">＋ Прибор</button>
             <button class="btn btn-secondary" onclick="openPrint()">🖨 Печать недели</button>
             <button class="btn btn-secondary" id="logBtn" style="display:none" onclick="openLog(null)">📋 Журнал правок</button>
+            <button class="btn btn-secondary q-btn" id="queueBtn" onclick="openQueue()" title="Записи, которые ещё не дошли до сервера">⏳ Очередь</button>
             <button class="btn btn-secondary" onclick="refreshRecords(true)" title="Обновить">⟳</button>
             <button class="btn btn-danger" onclick="handleLogout()">Выход</button>
         </div>
@@ -432,7 +480,7 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: #00d4ff; curso
     </div>
     <div class="cards" id="cards"></div>
     <div class="more-row" id="moreRow" style="display:none">
-        <button class="btn btn-secondary" onclick="showMore()">Показать ещё</button>
+        <button class="btn btn-secondary" id="moreBtn" onclick="showMore()">⬇️ Показать ещё 30</button>
     </div>
 </div>
 
@@ -602,6 +650,38 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: #00d4ff; curso
     </div>
 </div>
 
+<!-- ======================= ОЧЕРЕДЬ ОТПРАВКИ ======================= -->
+<div class="modal-overlay" id="queueModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Очередь отправки</h2>
+            <button class="modal-close" onclick="closeModal('queueModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="notice info">Записи хранятся в памяти этого браузера, пока сервер их не примет. При обрыве связи сайт
+                повторяет отправку сам: через 20 с, 1 мин, 2,5 мин, дальше каждые 5 минут, а также сразу при появлении связи.
+                Повтор безопасен - дубля не будет.</div>
+            <div id="queueList"></div>
+        </div>
+        <div class="modal-footer">
+            <span class="spacer"></span>
+            <button class="btn btn-secondary" onclick="closeModal('queueModal')">Закрыть</button>
+            <button class="btn btn-primary" onclick="retryAll()">Отправить сейчас</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="infoModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="infoTitle">Сообщение</h2>
+            <button class="modal-close" onclick="closeModal('infoModal')">×</button>
+        </div>
+        <div class="modal-body" id="infoBody"></div>
+        <div class="modal-footer"><span class="spacer"></span><button class="btn btn-primary" onclick="closeModal('infoModal')">Понятно</button></div>
+    </div>
+</div>
+
 <datalist id="dlNames"></datalist>
 <datalist id="dlPlaces"></datalist>
 
@@ -616,7 +696,16 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: #00d4ff; curso
 // Адрес веб-приложения Apps Script (Развертывание -> Веб-приложение -> URL)
 const API_URL = 'https://script.google.com/macros/s/AKfycby9SHQ4N60Amw9CEiMm95FdmBNcF1Ljdikqw1NQNBy526lyvLcIjp-2b9RbbiGtvyVX/exec';
 const API_TIMEOUT = 30000;
-const PAGE_SIZE = 200;
+const PAGE_SIZE = 30;                       // сколько приборов показываем сразу и добавляем кнопкой
+const RETRY_DELAYS = [20000, 60000, 150000, 300000];   // повторы: 20 с, 1 мин, 2,5 мин, дальше каждые 5 мин
+
+// Уникальная приставка для памяти браузера. Все сайты на energo380.github.io
+// делят одну память (localStorage), поэтому имена ключей не должны совпадать
+// со «Снабжением» и другими страницами
+const APP_ID = 'npf-metrology-si-k7q2';
+const QUEUE_KEY = APP_ID + ':queue:v1';
+const DRAFT_KEY = APP_ID + ':draft:v1';
+const SESSION_KEY = APP_ID + ':session:v1';
 
 const STAGES = [
     { key: 'd1', title: '1. Цех → Метрология', short: 'Цех→Метр.' },
@@ -630,7 +719,8 @@ let me = { name: '', role: '', password: '' };
 let people = [];
 let places = [];
 let settings = { lockDays: 10, warnDays: 20, org: 'АО "Новосибирская птицефабрика"' };
-let records = [];
+let base = [];             // записи, как их отдал сервер
+let records = [];          // то же + ещё не отправленные правки из очереди
 let today = '';
 let lastLoad = 0;
 
@@ -643,6 +733,9 @@ let currentRec = null;      // открытая запись (null - новая)
 let newClientId = '';
 let logEntries = [];
 let toastTimer = null, filterTimer = null;
+let qBusy = false, qTimer = null;
+let editQid = '';          // открыта запись, не принятая сервером (правим её в очереди)
+let draftTimer = null;
 
 // ============================================================
 // ВСПОМОГАТЕЛЬНЫЕ
@@ -801,6 +894,7 @@ async function handleLogin() {
         applyInit(res, pwd);
         showMain();
         showToast('Добро пожаловать, ' + me.name + '!', 'success');
+        queueKick();
     } else {
         $('loginError').textContent = (res && res.error) || 'Неверный пароль';
     }
@@ -812,26 +906,30 @@ function applyInit(res, pwd) {
     places = res.places || [];
     settings = Object.assign(settings, res.settings || {});
     today = res.today || '';
-    records = res.records || [];
+    base = res.records || [];
+    rebuildRecords();
     lastLoad = Date.now();
-    try { sessionStorage.setItem('si_user', JSON.stringify({ password: pwd })); } catch (e) { }
+    try { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ password: pwd })); } catch (e) { }
 }
 
 async function checkSession() {
     let saved = null;
-    try { saved = JSON.parse(sessionStorage.getItem('si_user') || 'null'); } catch (e) { saved = null; }
+    try { saved = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { saved = null; }
     if (!saved || !saved.password) return;
     showLoading();
     const res = await apiRequest({ action: 'init', password: saved.password });
     hideLoading();
-    if (res && res.success) { applyInit(res, saved.password); showMain(); }
-    else { try { sessionStorage.removeItem('si_user'); } catch (e) { } }
+    if (res && res.success) { applyInit(res, saved.password); showMain(); queueKick(); }
+    else if (!res || !res.transport) { try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { } }
 }
 
 function handleLogout() {
-    try { sessionStorage.removeItem('si_user'); } catch (e) { }
+    const unsent = qMine().length;
+    if (unsent && !confirm('В очереди ' + unsent + ' неотправленных записей. Они останутся в памяти этого браузера и уйдут после следующего входа. Выйти?')) return;
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { }
     me = { name: '', role: '', password: '' };
-    records = []; selected.clear();
+    base = []; records = []; selected.clear();
+    renderQueueBtn();
     document.querySelectorAll('.modal-overlay.active').forEach(function (m) { m.classList.remove('active'); });
     $('mainScreen').style.display = 'none';
     $('loginScreen').style.display = 'flex';
@@ -847,10 +945,11 @@ function showMain() {
     const b = $('userBadge');
     b.textContent = me.name + (isAdmin() ? ' · администратор' : ' · метролог');
     b.className = 'user-badge' + (isAdmin() ? ' admin' : '');
-    $('headerSub').textContent = settings.org + ' · запись закрывается через ' + settings.lockDays + ' дн. после выдачи в цех';
+    $('headerSub').textContent = settings.org + (isAdmin() ? ' · запись закрывается через ' + settings.lockDays + ' дн. после выдачи в цех' : '');
     $('logBtn').style.display = isAdmin() ? '' : 'none';
     fillStaticSelects();
     renderAll();
+    renderQueueBtn();
 }
 
 async function refreshRecords(manual) {
@@ -859,7 +958,8 @@ async function refreshRecords(manual) {
     const res = await apiRequest({ action: 'list', password: me.password });
     if (manual) hideLoading();
     if (res && res.success) {
-        records = res.records || [];
+        base = res.records || [];
+        rebuildRecords();
         if (res.today) today = res.today;
         lastLoad = Date.now();
         const ids = new Set(records.map(function (r) { return r.id; }));
@@ -957,11 +1057,12 @@ function applyFilters() {
     const k = sortKey, dir = sortDir;
     list.sort(function (a, b) {
         let x = a[k], y = b[k];
-        if (k === 'num' || k === 'days') { x = x === '' ? -1 : Number(x); y = y === '' ? -1 : Number(y); }
+        if (k === 'num') { x = x === '' ? 1e9 : Number(x); y = y === '' ? 1e9 : Number(y); }
+        else if (k === 'days') { x = x === '' ? -1 : Number(x); y = y === '' ? -1 : Number(y); }
         else { x = String(x || ''); y = String(y || ''); if (!x && y) return 1; if (x && !y) return -1; }
         if (x < y) return -dir;
         if (x > y) return dir;
-        return b.num - a.num;
+        return (Number(b.num) || 1e9) - (Number(a.num) || 1e9);
     });
     return list;
 }
@@ -981,18 +1082,19 @@ function renderSummary() {
         if (r.result === 'Не прошёл проверку') c.fail++;
     });
     const tiles = [
-        { key: '', cls: '', n: c.total, label: 'Всего приборов в журнале' },
-        { key: 'st:Поступил в метрологию', cls: 's1', n: c['Поступил в метрологию'], label: '1. Поступил в метрологию' },
-        { key: 'st:В ЦСМ на поверке', cls: 's2', n: c['В ЦСМ на поверке'], label: '2. В ЦСМ на поверке' },
-        { key: 'st:Вернулось из ЦСМ', cls: 's3', n: c['Вернулось из ЦСМ'], label: '3. Вернулось из ЦСМ' },
-        { key: 'st:Выдано в цех', cls: 's4', n: c['Выдано в цех'], label: '4. Выдано в цех' },
-        { key: 'overdue', cls: 'warn', n: c.overdue, label: 'Не в цеху ' + settings.warnDays + ' дн. и дольше' },
-        { key: 'fail', cls: 'fail', n: c.fail, label: 'Не прошли проверку' }
+        { key: '', cls: '', n: c.total, label: 'Всего приборов в журнале', ico: 'gauge' },
+        { key: 'st:Поступил в метрологию', cls: 's1', n: c['Поступил в метрологию'], label: '1. Поступил в метрологию', ico: 'inbox' },
+        { key: 'st:В ЦСМ на поверке', cls: 's2', n: c['В ЦСМ на поверке'], label: '2. В ЦСМ на поверке', ico: 'truck' },
+        { key: 'st:Вернулось из ЦСМ', cls: 's3', n: c['Вернулось из ЦСМ'], label: '3. Вернулось из ЦСМ', ico: 'seal' },
+        { key: 'st:Выдано в цех', cls: 's4', n: c['Выдано в цех'], label: '4. Выдано в цех', ico: 'factory' },
+        { key: 'overdue', cls: 'warn', n: c.overdue, label: 'Не в цеху ' + settings.warnDays + ' дн. и дольше', ico: 'clock' },
+        { key: 'fail', cls: 'fail', n: c.fail, label: 'Не прошли проверку', ico: 'xcircle' }
     ];
-    if (c['Некорректная дата']) tiles.push({ key: 'st:Некорректная дата', cls: 'bad', n: c['Некорректная дата'], label: 'Некорректная дата' });
+    if (c['Некорректная дата']) tiles.push({ key: 'st:Некорректная дата', cls: 'bad', n: c['Некорректная дата'], label: 'Некорректная дата', ico: 'clock' });
     $('summary').innerHTML = tiles.map(function (t) {
         const active = t.key === tileFilter && (t.key || !tileFilter);
         return '<button class="tile ' + t.cls + (active && t.key ? ' active' : '') + '" onclick="setTile(\'' + esc(t.key) + '\')">' +
+            '<span class="t-ico">' + icon(t.ico) + '</span>' +
             '<div class="t-num">' + t.n + '</div><div class="t-label">' + esc(t.label) + '</div></button>';
     }).join('');
 }
@@ -1020,10 +1122,11 @@ function renderList() {
         $('tbody').innerHTML = part.map(function (r) {
             const sel = selected.has(r.id);
             const wd = daysInWork(r);
-            return '<tr data-id="' + esc(r.id) + '" class="' + (sel ? 'selected' : '') + '">' +
-                '<td class="c-chk" onclick="event.stopPropagation()"><input type="checkbox" ' + (sel ? 'checked' : '') +
-                    ' onclick="toggleSel(\'' + esc(r.id) + '\', this.checked)"></td>' +
-                '<td class="c-num">' + r.num + (r.locked ? ' <span class="lock" title="Запись закрыта">🔒</span>' : '') + '</td>' +
+            return '<tr data-id="' + esc(r.id) + '" class="' + (sel ? 'selected' : '') + (r.pending ? ' pending' : '') +
+                    (r.pending === 'rejected' ? ' rejected' : '') + '">' +
+                '<td class="c-chk" onclick="event.stopPropagation()">' + (isTmp(r) ? '' : '<input type="checkbox" ' + (sel ? 'checked' : '') +
+                    ' onclick="toggleSel(\'' + esc(r.id) + '\', this.checked)">') + '</td>' +
+                '<td class="c-num">' + (r.num || '') + (r.locked ? ' <span class="lock" title="Запись закрыта">🔒</span>' : '') + pendBadge(r) + '</td>' +
                 '<td class="c-name">' + esc(r.name) + '</td>' +
                 '<td class="c-serial">' + esc(r.serial) + '</td>' +
                 '<td class="c-place">' + esc(r.place) + '</td>' +
@@ -1042,10 +1145,11 @@ function renderList() {
         $('cards').innerHTML = part.map(function (r) {
             const sel = selected.has(r.id);
             const wd = daysInWork(r);
-            return '<div class="card' + (sel ? ' selected' : '') + '" data-id="' + esc(r.id) + '">' +
-                '<div class="card-top"><input type="checkbox" ' + (sel ? 'checked' : '') +
-                    ' onclick="event.stopPropagation(); toggleSel(\'' + esc(r.id) + '\', this.checked)">' +
-                '<div class="ttl"><span class="num">№ ' + r.num + (r.locked ? ' 🔒' : '') + '</span><br>' + esc(r.name) + '</div></div>' +
+            return '<div class="card' + (sel ? ' selected' : '') + (r.pending ? ' pending' : '') + '" data-id="' + esc(r.id) + '">' +
+                '<div class="card-top">' + (isTmp(r) ? '' : '<input type="checkbox" ' + (sel ? 'checked' : '') +
+                    ' onclick="event.stopPropagation(); toggleSel(\'' + esc(r.id) + '\', this.checked)">') +
+                '<div class="ttl"><span class="num">' + (r.num ? '№ ' + r.num : 'новый') + (r.locked ? ' 🔒' : '') + ' ' + pendBadge(r) +
+                    '</span><br>' + esc(r.name) + '</div></div>' +
                 '<div class="meta">' + (r.serial ? 'Зав. № ' + esc(r.serial) + ' · ' : '') + esc(r.place || 'место не указано') + '</div>' +
                 '<div class="steps">' + STAGES.map(function (s) {
                     return '<div class="step' + (r[s.key] ? ' done' : '') + '"><div class="bar"></div>' +
@@ -1059,6 +1163,7 @@ function renderList() {
         }).join('');
     }
     $('moreRow').style.display = filtered.length > shownLimit ? '' : 'none';
+    $('moreBtn').textContent = '⬇️ Показать ещё ' + Math.min(PAGE_SIZE, filtered.length - shownLimit);
     syncChkAll();
 }
 
@@ -1096,11 +1201,11 @@ function toggleSel(id, on) {
     updateSelbar(); syncChkAll();
 }
 function toggleAll(on) {
-    filtered.slice(0, shownLimit).forEach(function (r) { if (on) selected.add(r.id); else selected.delete(r.id); });
+    filtered.slice(0, shownLimit).forEach(function (r) { if (isTmp(r)) return; if (on) selected.add(r.id); else selected.delete(r.id); });
     renderList(); updateSelbar();
 }
 function syncChkAll() {
-    const part = filtered.slice(0, shownLimit);
+    const part = filtered.slice(0, shownLimit).filter(function (r) { return !isTmp(r); });
     const n = part.filter(function (r) { return selected.has(r.id); }).length;
     const c = $('chkAll');
     c.checked = part.length > 0 && n === part.length;
@@ -1201,7 +1306,7 @@ function openRecord(id) {
     const isNew = !currentRec;
     if (isNew) newClientId = newId('c');
 
-    $('recTitle').textContent = isNew ? 'Новый прибор' : '№ ' + r.num + ' · ' + r.name;
+    $('recTitle').textContent = isNew ? 'Новый прибор' : (r.num ? '№ ' + r.num + ' · ' : 'Новый (в очереди) · ') + r.name;
     $('rName').value = r.name || '';
     $('rSerial').value = r.serial || '';
     $('rPlace').value = r.place || '';
@@ -1210,9 +1315,24 @@ function openRecord(id) {
     byOptions($('rBy'));
     STAGES.forEach(function (s) { setDateField('r_' + s.key, r[s.key] || ''); });
     if (isNew) setDateField('r_d1', todayIso());
+    editQid = r.pending === 'rejected' ? r.qid : '';
+
+    let draftNote = '';
+    if (isNew) {
+        const dr = draftLoad();
+        if (dr) {
+            $('rName').value = dr.name || ''; $('rSerial').value = dr.serial || ''; $('rPlace').value = dr.place || '';
+            $('rResult').value = dr.result || ''; $('rNote').value = dr.note || '';
+            STAGES.forEach(function (s) { setDateField('r_' + s.key, dr[s.key] || ''); });
+            if (dr.by && Array.from($('rBy').options).some(function (o) { return o.value === dr.by; })) $('rBy').value = dr.by;
+            draftNote = '<div class="notice info">📝 Восстановлен незаконченный черновик. ' +
+                '<button class="btn btn-secondary btn-small" onclick="clearDraftForm()">Очистить форму</button></div>';
+        }
+    }
 
     const locked = !!r.locked;
-    const readOnly = locked && !isAdmin();
+    const waiting = !!r.pending && r.pending !== 'rejected';
+    const readOnly = (locked && !isAdmin()) || waiting;
     ['rName', 'rSerial', 'rPlace', 'rResult', 'rNote', 'rBy'].forEach(function (f) { $(f).disabled = readOnly; });
     STAGES.forEach(function (s) { setDateFieldDisabled('r_' + s.key, readOnly); });
 
@@ -1224,7 +1344,14 @@ function openRecord(id) {
         notice = '<div class="notice lock">🔒 Запись закрыта для метрологов. Вы можете исправить её как администратор - ' +
             'в колонку «Изменения» добавится пометка о корректировке.</div>';
     }
-    $('recNotice').innerHTML = notice;
+    if (waiting) {
+        notice = '<div class="notice info">⏳ Изменения этой записи ещё не дошли до сервера и стоят в очереди отправки. ' +
+            'Править можно после отправки.</div>';
+    } else if (r.pending === 'rejected') {
+        notice = '<div class="notice err">⚠ Сервер не принял эти изменения: ' + esc(r.qerror || '') +
+            '<br>Исправьте и сохраните ещё раз или удалите из очереди (кнопка «⏳ Очередь» вверху).</div>';
+    }
+    $('recNotice').innerHTML = draftNote + notice;
 
     $('rChangesWrap').style.display = r.changes ? '' : 'none';
     $('rChanges').textContent = r.changes || '';
@@ -1232,8 +1359,8 @@ function openRecord(id) {
         'Внёс: ' + esc(r.createdBy || '—') + (r.createdAt ? ', ' + esc(r.createdAt) : '') +
         (r.updatedBy ? '<br>Последнее изменение: ' + esc(r.updatedBy) + ', ' + esc(r.updatedAt) : '');
 
-    $('recDelete').style.display = !isNew && isAdmin() ? '' : 'none';
-    $('recHistory').style.display = !isNew && isAdmin() ? '' : 'none';
+    $('recDelete').style.display = !isNew && isAdmin() && !r.pending && !isTmp(r) ? '' : 'none';
+    $('recHistory').style.display = !isNew && isAdmin() && !isTmp(r) ? '' : 'none';
     $('recSaveMore').style.display = isNew ? '' : 'none';
     $('recSave').style.display = readOnly ? 'none' : '';
     updatePreview();
@@ -1241,63 +1368,56 @@ function openRecord(id) {
     if (isNew) setTimeout(function () { $('rName').focus(); }, 50);
 }
 
-async function saveRecord(more) {
+function saveRecord(more) {
     const r = readForm();
     const err = r._err || validateRec(r);
     if (err) { showToast(err, 'error'); updatePreview(); return; }
-    const isNew = !currentRec;
+    const isNew = !currentRec || isTmp(currentRec);
+    const baseRec = currentRec && !isTmp(currentRec) ? base.find(function (x) { return x.id === currentRec.id; }) : null;
     const data = {
         id: isNew ? '' : currentRec.id,
-        stamp: isNew ? '' : currentRec.stamp,
-        clientId: isNew ? newClientId : '',
+        stamp: baseRec ? baseRec.stamp : '',
+        clientId: isNew ? (currentRec && isTmp(currentRec) ? currentRec.clientId : newClientId) : '',
         name: r.name, serial: r.serial, place: r.place,
         d1: r.d1, d2: r.d2, d3: r.d3, d4: r.d4,
         result: r.result, note: r.note, by: r.by
     };
-    $('recSave').disabled = true; $('recSaveMore').disabled = true;
-    showLoading();
-    const res = await apiRequest({ action: 'save', password: me.password, data: JSON.stringify(data) });
-    hideLoading();
-    $('recSave').disabled = false; $('recSaveMore').disabled = false;
-
-    if (res && res.success) {
-        upsert(res.record);
-        renderAll();
-        if (res.unchanged) showToast('Изменений нет', 'info');
-        else showToast(isNew ? 'Прибор № ' + res.record.num + ' внесён' : 'Сохранено', 'success');
-        if (more && isNew) {
-            // следующий прибор: то же место, та же дата этапа 1, наименование оставляем
-            currentRec = null;
-            newClientId = newId('c');
-            $('rSerial').value = '';
-            $('rNote').value = '';
-            ['d2', 'd3', 'd4'].forEach(function (k) { setDateField('r_' + k, ''); });
-            $('recTitle').textContent = 'Новый прибор (следующий)';
-            updatePreview();
-            $('rSerial').focus();
-        } else {
-            closeModal('recordModal');
-        }
+    if (!isNew && baseRec && EDIT_FIELDS.every(function (f) { return String(baseRec[f] || '') === String(data[f] || ''); }) && !editQid) {
+        showToast('Изменений нет', 'info');
+        closeModal('recordModal');
         return;
     }
-    if (res && res.record && (res.conflict || res.locked)) {
-        upsert(res.record);
-        renderAll();
-        showToast(res.error, 'error');
-        openRecord(res.record.id);
-        return;
+    const label = (isNew ? 'Новый прибор: ' : '№ ' + currentRec.num + ': ') + r.name + (r.serial ? ', зав. № ' + r.serial : '');
+    if (editQid && qGet(editQid)) {
+        qUpdate(editQid, { data: data, label: label, status: 'pending', error: '', attempts: 0, nextTry: 0 });
+    } else {
+        qAdd({ kind: 'save', data: data, label: label });
     }
-    if (res && res.gone && currentRec) {
-        records = records.filter(function (x) { return x.id !== currentRec.id; });
-        renderAll();
+    editQid = '';
+    if (isNew) draftClear();
+    rebuildRecords();
+    renderAll();
+    showToast(isNew ? 'Прибор записан, отправляется на сервер…' : 'Сохранено, отправляется на сервер…', 'info');
+    if (more && isNew) {
+        // следующий прибор: то же место, та же дата этапа 1, наименование оставляем
+        currentRec = null;
+        newClientId = newId('c');
+        $('rSerial').value = '';
+        $('rNote').value = '';
+        ['d2', 'd3', 'd4'].forEach(function (k) { setDateField('r_' + k, ''); });
+        $('recTitle').textContent = 'Новый прибор (следующий)';
+        $('recNotice').innerHTML = '';
+        updatePreview();
+        $('rSerial').focus();
+    } else {
         closeModal('recordModal');
     }
-    showToast((res && res.error) || 'Не удалось сохранить', 'error');
+    queueProcess();
 }
 
 function upsert(rec) {
-    const i = records.findIndex(function (x) { return x.id === rec.id; });
-    if (i >= 0) records[i] = rec; else records.push(rec);
+    const i = base.findIndex(function (x) { return x.id === rec.id; });
+    if (i >= 0) base[i] = rec; else base.push(rec);
 }
 
 async function deleteRecord() {
@@ -1308,7 +1428,8 @@ async function deleteRecord() {
     hideLoading();
     if (res && (res.success || res.gone)) {
         const id = currentRec.id;
-        records = records.filter(function (x) { return x.id !== id; });
+        base = base.filter(function (x) { return x.id !== id; });
+        rebuildRecords();
         selected.delete(id);
         updateSelbar();
         renderAll();
@@ -1364,38 +1485,327 @@ function onBulkStage() {
     $('bResult').parentNode.style.opacity = s >= 3 ? '1' : '0.6';
 }
 
-async function applyBulk() {
+function applyBulk() {
     const date = getDateField('bDate');
     if (date === null) { showToast('Дата должна быть в виде дд.мм.гггг', 'error'); return; }
-    const ids = Array.from(selected);
+    const list = selectedRecords().filter(function (r) { return !isTmp(r) && (isAdmin() || !r.locked); });
+    if (!list.length) { showToast('Среди выбранных нет записей, которые можно изменить', 'error'); return; }
+    const ids = list.map(function (r) { return r.id; });
     const stage = Number($('bStage').value);
     if (!date && !confirm('Дата пустая - этап ' + stage + ' будет очищен у ' + ids.length + ' приборов. Продолжить?')) return;
-    $('bulkApply').disabled = true;
-    showLoading();
-    const res = await apiRequest({
-        action: 'bulk', password: me.password,
-        data: JSON.stringify({ ids: ids, stage: stage, date: date, result: $('bResult').value, by: $('bBy').value })
+    qAdd({
+        kind: 'bulk',
+        data: { ids: ids, stage: stage, date: date, result: $('bResult').value, by: $('bBy').value },
+        label: 'Этап ' + stage + (date ? ' = ' + isoToRu(date) : ' очищен') + ' у ' + ids.length + ' приборов (№ ' +
+            list.slice(0, 8).map(function (r) { return r.num; }).join(', ') + (list.length > 8 ? '…' : '') + ')'
     });
-    hideLoading();
-    $('bulkApply').disabled = false;
-    if (!res || !res.success) { showToast((res && res.error) || 'Не удалось сохранить', 'error'); return; }
-    (res.updated || []).forEach(upsert);
-    const okIds = new Set((res.updated || []).map(function (r) { return r.id; }));
-    okIds.forEach(function (id) { selected.delete(id); });
+    ids.forEach(function (id) { selected.delete(id); });
     updateSelbar();
+    rebuildRecords();
     renderAll();
-    if (res.errors && res.errors.length) {
-        $('bulkResult').innerHTML = '<div class="notice err">Сохранено: ' + okIds.size + '. Не сохранено: ' + res.errors.length +
-            ' (остались выбранными):<br>' + res.errors.map(function (e) {
-                return (e.num ? '№ ' + e.num + ' — ' : '') + esc(e.error);
-            }).join('<br>') + '</div>';
-        $('bulkList').innerHTML = '';
-        showToast('Сохранено ' + okIds.size + ', с ошибками ' + res.errors.length, 'error');
-    } else {
-        closeModal('bulkModal');
-        showToast('Этап отмечен у ' + okIds.size + ' приборов', 'success');
-    }
+    closeModal('bulkModal');
+    showToast('Этап отмечен у ' + ids.length + ' приборов, отправляется на сервер…', 'info');
+    queueProcess();
 }
+
+// ============================================================
+// ОЧЕРЕДЬ ОТПРАВКИ
+// Всё, что вносят, сначала пишется в память браузера (localStorage),
+// потом уходит на сервер строго по одному. Обрыв связи - повтор
+// через 20 с / 1 мин / 2,5 мин / каждые 5 мин и сразу при появлении
+// связи. Отказ сервера по существу (закрыто, даты) - запись остаётся
+// в очереди с пометкой, её можно исправить или удалить.
+// Повтор безопасен: новый прибор сервер узнаёт по clientId,
+// повтор правки - по совпадению содержимого.
+// ============================================================
+
+const EDIT_FIELDS = ['name', 'serial', 'place', 'd1', 'd2', 'd3', 'd4', 'result', 'note'];
+
+function qLoad() {
+    try {
+        const arr = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
+        return Array.isArray(arr) ? arr : [];
+    } catch (e) { return []; }
+}
+function qSave(arr) {
+    try { localStorage.setItem(QUEUE_KEY, JSON.stringify(arr)); }
+    catch (e) { showToast('Не удалось записать очередь в память браузера', 'error'); }
+}
+function qMine() { return qLoad().filter(function (it) { return it.owner === me.name; }); }
+function qGet(id) { return qLoad().find(function (it) { return it.id === id; }) || null; }
+function qAdd(item) {
+    const arr = qLoad();
+    item.id = newId('q');
+    item.owner = me.name;
+    item.status = 'pending';
+    item.attempts = 0;
+    item.error = '';
+    item.created = Date.now();
+    arr.push(item);
+    qSave(arr);
+    renderQueueBtn();
+    return item;
+}
+function qUpdate(id, ch) {
+    const arr = qLoad();
+    arr.forEach(function (it) { if (it.id === id) Object.assign(it, ch); });
+    qSave(arr);
+    renderQueueBtn();
+}
+function qRemove(id) {
+    qSave(qLoad().filter(function (it) { return it.id !== id; }));
+    renderQueueBtn();
+}
+// после перезагрузки страницы «отправляется» значит «не знаем» - отправим ещё раз
+function qRecoverStuck() {
+    const arr = qLoad();
+    let ch = false;
+    arr.forEach(function (it) { if (it.status === 'sending') { it.status = 'pending'; ch = true; } });
+    if (ch) qSave(arr);
+}
+
+function isTmp(r) { return String(r.id || '').indexOf('tmp:') === 0; }
+
+function pendBadge(r) {
+    if (!r.pending) return '';
+    if (r.pending === 'rejected') return ' <span class="pend bad" title="' + esc(r.qerror || '') + '">⚠ не принято</span>';
+    return ' <span class="pend" title="Ещё не дошло до сервера">⏳ в очереди</span>';
+}
+
+function recalc(r) { r.status = calcStatus(r); r.days = calcDays(r); }
+
+// Показываем записи с учётом ещё не отправленных правок
+function rebuildRecords() {
+    const map = new Map();
+    base.forEach(function (r) { map.set(r.id, Object.assign({}, r)); });
+    const extra = [];
+    qMine().forEach(function (it) {
+        const mark = function (r) { r.pending = it.status === 'rejected' ? 'rejected' : 'wait'; r.qid = it.id; r.qerror = it.error; };
+        if (it.kind === 'save') {
+            const d = it.data;
+            if (!d.id) {
+                const r = { id: 'tmp:' + d.clientId, clientId: d.clientId, num: '', createdBy: d.by, changes: '', locked: false };
+                EDIT_FIELDS.forEach(function (f) { r[f] = d[f] || ''; });
+                recalc(r); mark(r); extra.push(r);
+            } else if (map.has(d.id)) {
+                const r = map.get(d.id);
+                EDIT_FIELDS.forEach(function (f) { r[f] = d[f] || ''; });
+                recalc(r); mark(r);
+            }
+        } else if (it.kind === 'bulk') {
+            it.data.ids.forEach(function (id) {
+                const r = map.get(id);
+                if (!r) return;
+                r['d' + it.data.stage] = it.data.date || '';
+                if (it.data.result !== 'keep') r.result = it.data.result || '';
+                recalc(r); mark(r);
+            });
+        }
+    });
+    records = Array.from(map.values()).concat(extra);
+}
+
+function retryDelay(attempts) { return RETRY_DELAYS[Math.min(attempts, RETRY_DELAYS.length) - 1]; }
+
+async function queueProcess() {
+    if (qBusy || !me.password) { renderQueueBtn(); return; }
+    const next = qMine().find(function (it) { return it.status === 'pending'; });
+    if (!next) { renderQueueBtn(); scheduleRetry(); return; }
+
+    qBusy = true;
+    qUpdate(next.id, { status: 'sending' });
+    const res = await apiRequest({ action: next.kind, password: me.password, data: JSON.stringify(next.data) });
+    qBusy = false;
+    if (!qGet(next.id)) { setTimeout(queueProcess, 300); return; }   // удалили, пока отправлялось
+
+    if (res && res.success) {
+        qRemove(next.id);
+        if (next.kind === 'save') {
+            if (res.record) upsert(res.record);
+            if (!next.data.id) showToast('Прибор № ' + res.record.num + ' записан на сервер', 'success');
+            else showToast('Запись № ' + res.record.num + ' сохранена на сервере', 'success');
+        } else {
+            (res.updated || []).forEach(upsert);
+            if (res.errors && res.errors.length) {
+                showInfo('Этап отмечен не у всех', '<div class="notice err">Сохранено: ' + (res.updated || []).length +
+                    '. Не сохранено: ' + res.errors.length + ' (снова выбраны в журнале):</div>' +
+                    res.errors.map(function (e) { return '<div>' + (e.num ? '№ ' + e.num + ' — ' : '') + esc(e.error) + '</div>'; }).join(''));
+                res.errors.forEach(function (e) { if (e.id && base.some(function (r) { return r.id === e.id; })) selected.add(e.id); });
+                updateSelbar();
+            } else {
+                showToast('Этап записан на сервер у ' + (res.updated || []).length + ' приборов', 'success');
+            }
+        }
+        rebuildRecords(); renderAll();
+        setTimeout(queueProcess, 300);
+        return;
+    }
+
+    const transport = !res || res.transport || res.timeout;
+    if (transport) {
+        const attempts = (next.attempts || 0) + 1;
+        const delay = retryDelay(attempts);
+        qUpdate(next.id, {
+            status: 'error', attempts: attempts, nextTry: Date.now() + delay,
+            error: (res && res.error) || 'Нет связи с сервером'
+        });
+        if (attempts === 1) showToast('Нет связи с сервером. Запись сохранена в браузере и уйдёт сама.', 'error');
+        rebuildRecords(); renderList();
+        scheduleRetry();
+        return;
+    }
+
+    // отказ по существу: повтор ничего не изменит
+    if (res.record) upsert(res.record);
+    if (res.gone && next.data.id) base = base.filter(function (r) { return r.id !== next.data.id; });
+    if (res.gone && next.data.id) {
+        qRemove(next.id);
+        showToast('Запись уже удалена на сервере - правка отменена', 'error');
+    } else {
+        qUpdate(next.id, { status: 'rejected', error: res.error || 'Сервер не принял запись' });
+        showToast('Не принято: ' + (res.error || '') + ' Откройте «⏳ Очередь».', 'error');
+    }
+    rebuildRecords(); renderAll();
+    setTimeout(queueProcess, 300);
+}
+
+function scheduleRetry() {
+    if (qTimer) { clearTimeout(qTimer); qTimer = null; }
+    const waiting = qMine().filter(function (it) { return it.status === 'error'; });
+    if (!waiting.length) return;
+    const soonest = Math.min.apply(null, waiting.map(function (it) { return it.nextTry || 0; }));
+    qTimer = setTimeout(function () {
+        qTimer = null;
+        const now = Date.now();
+        const arr = qLoad();
+        arr.forEach(function (it) {
+            if (it.owner === me.name && it.status === 'error' && (it.nextTry || 0) <= now + 500) it.status = 'pending';
+        });
+        qSave(arr);
+        queueProcess();
+    }, Math.max(1000, soonest - Date.now()));
+}
+
+// повторить всё, что ждёт из-за связи, прямо сейчас
+function queueKick() {
+    const arr = qLoad();
+    let ch = false;
+    arr.forEach(function (it) { if (it.owner === me.name && it.status === 'error') { it.status = 'pending'; ch = true; } });
+    if (ch) qSave(arr);
+    queueProcess();
+}
+
+function retryAll() {
+    const arr = qLoad();
+    arr.forEach(function (it) { if (it.owner === me.name && it.status !== 'sending') { it.status = 'pending'; it.error = ''; } });
+    qSave(arr);
+    rebuildRecords(); renderList();
+    queueProcess();
+    renderQueueList();
+}
+
+function renderQueueBtn() {
+    const b = $('queueBtn');
+    if (!b) return;
+    const mine = me.name ? qMine() : [];
+    const bad = mine.filter(function (it) { return it.status === 'rejected'; }).length;
+    const err = mine.filter(function (it) { return it.status === 'error'; }).length;
+    b.classList.toggle('show', mine.length > 0);
+    b.classList.toggle('bad', bad > 0);
+    b.classList.toggle('warn', !bad && err > 0);
+    b.textContent = (bad ? '⚠' : '⏳') + ' Очередь: ' + mine.length;
+    b.title = bad ? 'Есть записи, которые сервер не принял' : (err ? 'Нет связи, отправка повторится сама' : 'Отправляется на сервер');
+    if ($('queueModal').classList.contains('active')) renderQueueList();
+}
+
+function openQueue() { renderQueueList(); openModal('queueModal'); }
+
+function queueStateText(it) {
+    if (it.status === 'sending') return 'отправляется…';
+    if (it.status === 'pending') return 'ожидает отправки';
+    if (it.status === 'error') {
+        const t = new Date(it.nextTry || Date.now());
+        return 'нет связи (' + esc(it.error) + '), попыток: ' + it.attempts + ', следующая в ' +
+            pad2(t.getHours()) + ':' + pad2(t.getMinutes()) + ':' + pad2(t.getSeconds());
+    }
+    return 'сервер не принял: ' + esc(it.error);
+}
+
+function renderQueueList() {
+    const mine = qMine();
+    const others = qLoad().length - mine.length;
+    $('queueList').innerHTML = (mine.length ? mine.map(function (it) {
+        const openBtn = it.kind === 'save'
+            ? '<button class="btn btn-secondary btn-small" onclick="openQueued(\'' + it.id + '\')">Открыть</button>' : '';
+        return '<div class="q-item"><div class="q-main">' + esc(it.label) +
+            '<div class="q-state' + (it.status === 'rejected' ? ' bad' : '') + '">' + queueStateText(it) + '</div></div>' +
+            '<div class="q-actions">' + openBtn +
+            (it.status !== 'sending' ? '<button class="btn btn-secondary btn-small" onclick="retryOne(\'' + it.id + '\')">Повторить</button>' : '') +
+            '<button class="btn btn-danger btn-small" onclick="dropQueued(\'' + it.id + '\')">Удалить</button></div></div>';
+    }).join('') : '<div class="empty">Очередь пуста - всё записано на сервер ✓</div>') +
+        (others ? '<div class="audit" style="margin-top:12px">Ещё ' + others + ' записей других сотрудников ждут их входа с этого компьютера.</div>' : '');
+}
+
+function retryOne(id) { qUpdate(id, { status: 'pending', error: '', nextTry: 0 }); rebuildRecords(); renderList(); queueProcess(); }
+
+function dropQueued(id) {
+    const it = qGet(id);
+    if (!it) return;
+    if (!confirm('Удалить из очереди «' + it.label + '»? Эти изменения не попадут на сервер.')) return;
+    qRemove(id);
+    rebuildRecords(); renderAll(); renderQueueList();
+}
+
+function openQueued(id) {
+    const it = qGet(id);
+    if (!it || it.kind !== 'save') return;
+    closeModal('queueModal');
+    openRecord(it.data.id || 'tmp:' + it.data.clientId);
+}
+
+function showInfo(title, html) { $('infoTitle').textContent = title; $('infoBody').innerHTML = html; openModal('infoModal'); }
+
+// ---------- черновик нового прибора ----------
+function draftLoad() {
+    try {
+        const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+        return d && d.owner === me.name && d.data ? d.data : null;
+    } catch (e) { return null; }
+}
+function draftSave() {
+    if (!$('recordModal').classList.contains('active') || (currentRec && !isTmp(currentRec)) || editQid) return;
+    const r = readForm();
+    const has = r.name || r.serial || r.note || r.d2 || r.d3 || r.d4;
+    try {
+        if (has) localStorage.setItem(DRAFT_KEY, JSON.stringify({ owner: me.name, data: r, at: Date.now() }));
+        else localStorage.removeItem(DRAFT_KEY);
+    } catch (e) { }
+}
+function draftClear() { try { localStorage.removeItem(DRAFT_KEY); } catch (e) { } }
+function clearDraftForm() {
+    draftClear();
+    ['rName', 'rSerial', 'rPlace', 'rNote'].forEach(function (f) { $(f).value = ''; });
+    $('rResult').value = '';
+    STAGES.forEach(function (s) { setDateField('r_' + s.key, ''); });
+    setDateField('r_d1', todayIso());
+    $('recNotice').innerHTML = '';
+    updatePreview();
+}
+$('recordModal').addEventListener('input', function () { clearTimeout(draftTimer); draftTimer = setTimeout(draftSave, 400); });
+$('recordModal').addEventListener('click', function () { clearTimeout(draftTimer); draftTimer = setTimeout(draftSave, 400); });
+
+// связь появилась / вкладку открыли снова - сразу пробуем отправить
+window.addEventListener('online', queueKick);
+window.addEventListener('focus', function () { if (me.password) queueKick(); });
+document.addEventListener('visibilitychange', function () { if (!document.hidden && me.password) queueKick(); });
+// другая вкладка этого же сайта изменила очередь
+window.addEventListener('storage', function (e) {
+    if (e.key === QUEUE_KEY && me.password) { rebuildRecords(); renderAll(); renderQueueBtn(); }
+});
+// предупреждение при закрытии - только про очередь этого сайта
+window.addEventListener('beforeunload', function (e) {
+    if (qLoad().some(function (it) { return it.status !== 'rejected'; })) { e.preventDefault(); e.returnValue = ''; }
+});
 
 // ============================================================
 // ПЕЧАТЬ НЕДЕЛИ
@@ -1533,12 +1943,76 @@ function renderLog() {
 }
 
 // ============================================================
+// ПРИБОРЫ В ОФОРМЛЕНИИ: манометр со стрелкой и значки
+// ============================================================
+
+const ICONS = {
+    gauge: '<circle cx="12" cy="13" r="8"/><path d="M12 13l4.5-4.5M8.5 17.5h7M5.5 10.5l1.2.7M18.5 10.5l-1.2.7M12 5v1.4"/>',
+    thermo: '<path d="M10 14.5V5a2 2 0 1 1 4 0v9.5a4 4 0 1 1-4 0z"/><path d="M12 9v8"/>',
+    scale: '<path d="M12 4v16M6 20h12M5 8h14"/><path d="M5 8l-2.5 6h5zM19 8l-2.5 6h5z"/>',
+    flame: '<path d="M12 3c3 4 6 6 6 10a6 6 0 0 1-12 0c0-3 2-5 3-7 1 2 2 3 3 3z"/>',
+    inbox: '<path d="M4 13l2-7h12l2 7v6H4z"/><path d="M4 13h4l1.5 3h5L16 13h4"/>',
+    truck: '<path d="M3 6h11v10H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
+    seal: '<circle cx="12" cy="12" r="8.5"/><path d="M8.3 12.2l2.5 2.5 4.9-5.2"/>',
+    factory: '<path d="M3 20V10l5 3v-3l5 3V5h4l1.2 15z"/><path d="M2.5 20h19"/>',
+    clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    xcircle: '<circle cx="12" cy="12" r="8.5"/><path d="M9 9l6 6M15 9l-6 6"/>'
+};
+function icon(name) { return '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || '') + '</svg>'; }
+
+function arcPath(r, a1, a2) {
+    function pt(a) { a = a * Math.PI / 180; return (60 + r * Math.cos(a)).toFixed(2) + ' ' + (60 + r * Math.sin(a)).toFixed(2); }
+    return 'M' + pt(a1) + ' A' + r + ' ' + r + ' 0 ' + (a2 - a1 > 180 ? 1 : 0) + ' 1 ' + pt(a2);
+}
+
+// Манометр: шкала 270°, деления, красная зона, стрелка.
+// kind: live - стрелка «работает», logo - маленький в шапке, bg - контур на фоне
+function gaugeSvg(kind) {
+    const gid = 'gr' + Math.random().toString(36).slice(2, 8);
+    let ticks = '';
+    for (let i = 0; i <= 20; i++) {
+        const a = (135 + i * 13.5) * Math.PI / 180, major = i % 5 === 0;
+        const r1 = major ? 36 : 40, r2 = 45;
+        ticks += '<line x1="' + (60 + r1 * Math.cos(a)).toFixed(2) + '" y1="' + (60 + r1 * Math.sin(a)).toFixed(2) +
+            '" x2="' + (60 + r2 * Math.cos(a)).toFixed(2) + '" y2="' + (60 + r2 * Math.sin(a)).toFixed(2) +
+            '" stroke="#fff" stroke-width="' + (major ? 2.4 : 1.2) + '" stroke-linecap="round" opacity="' + (major ? 0.95 : 0.6) + '"/>';
+    }
+    let nums = '';
+    if (kind !== 'logo') {
+        for (let k = 0; k <= 4; k++) {
+            const a = (135 + k * 67.5) * Math.PI / 180;
+            nums += '<text x="' + (60 + 28 * Math.cos(a)).toFixed(1) + '" y="' + (60 + 28 * Math.sin(a) + 3).toFixed(1) +
+                '" text-anchor="middle" font-size="8" font-family="Segoe UI, sans-serif" fill="#fff" opacity=".8">' + (k * 4) + '</text>';
+        }
+    }
+    const rot = kind === 'logo' ? 38 : (kind === 'bg' ? -55 : 0);
+    return '<svg class="gauge' + (kind === 'live' ? ' live' : '') + '" viewBox="0 0 120 120" aria-hidden="true">' +
+        '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/>' +
+        '<stop offset="1" stop-color="#8fd8ff"/></linearGradient></defs>' +
+        '<circle cx="60" cy="60" r="55" fill="' + (kind === 'bg' ? 'none' : 'rgba(255,255,255,0.14)') +
+            '" stroke="url(#' + gid + ')" stroke-width="' + (kind === 'bg' ? 2 : 5) + '"/>' +
+        '<path d="' + arcPath(47, 135, 405) + '" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="2"/>' +
+        '<path d="' + arcPath(47, 351, 405) + '" fill="none" stroke="#ff8a80" stroke-width="4" stroke-linecap="round"/>' +
+        ticks + nums +
+        (kind === 'logo' ? '' : '<text x="60" y="90" text-anchor="middle" font-size="8" font-family="Segoe UI, sans-serif" fill="#fff" opacity=".7">кгс/см²</text>') +
+        '<g class="needle"' + (kind === 'live' ? '' : ' style="transform:rotate(' + rot + 'deg)"') + '>' +
+            '<path d="M58.4 62 L60 21 L61.6 62 Z" fill="#ff6e6e"/></g>' +
+        '<circle cx="60" cy="60" r="6.5" fill="#fff"/><circle cx="60" cy="60" r="2.5" fill="#1a73c8"/></svg>';
+}
+
+function drawInstruments() {
+    document.querySelectorAll('[data-gauge]').forEach(function (el) { el.innerHTML = gaugeSvg(el.getAttribute('data-gauge')); });
+    $('loginIcons').innerHTML = ['gauge', 'thermo', 'scale', 'flame'].map(icon).join('');
+}
+
+// ============================================================
 // ОКНА
 // ============================================================
 
 function openModal(id) { $(id).classList.add('active'); }
 function closeModal(id) { $(id).classList.remove('active'); }
 document.querySelectorAll('.modal-overlay').forEach(function (m) {
+    if (m.id === 'recordModal') return;   // карточку закрываем только кнопкой - ввод не теряется
     m.addEventListener('mousedown', function (e) { if (e.target === m) m.classList.remove('active'); });
 });
 document.addEventListener('keydown', function (e) {
@@ -1550,6 +2024,8 @@ document.addEventListener('keydown', function (e) {
 $('passwordInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') handleLogin(); });
 window.addEventListener('afterprint', function () { $('printArea').innerHTML = ''; });
 
+qRecoverStuck();
+drawInstruments();
 checkSession();
 </script>
 </body>

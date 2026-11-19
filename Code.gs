@@ -445,6 +445,9 @@ function saveRecord_(ctx, user, d) {
     old = all.rows[String(d.id)];
     if (!old) return { success: false, gone: true, error: 'Запись не найдена - возможно, её удалили. Обновите журнал.' };
     if (d.stamp && d.stamp !== stampOf_(ctx, old)) {
+      // Повтор из очереди после обрыва связи: правка уже записана - это не конфликт
+      var same = EDITABLE.every(function (f) { return String(old[f] || '') === String(input[f] || ''); });
+      if (same) return { success: true, unchanged: true, record: toClient_(ctx, old) };
       return {
         success: false, conflict: true, record: toClient_(ctx, old),
         error: 'Эту запись уже изменил(а) ' + (old.updatedBy || old.createdBy) + ' (' +
