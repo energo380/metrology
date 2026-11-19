@@ -43,7 +43,7 @@ body {
 button, input, select, textarea { font-family: inherit; }
 
 /* ---------- вход ---------- */
-.login-container { display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+.login-container { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px; min-height: 100vh; padding: 20px; }
 .login-box {
     background: rgba(255, 255, 255, 0.1);
     backdrop-filter: blur(10px);
@@ -420,6 +420,7 @@ tr.rejected td { background: rgba(255, 107, 107, 0.12); }
         <button class="login-btn" onclick="handleLogin()">Войти</button>
         <div class="error-message" id="loginError"></div>
     </div>
+    <button type="button" class="btn btn-secondary" onclick="goMenu()" title="Вернуться в меню рабочих сервисов">🏠 Сервисы</button>
 </div>
 
 <!-- ======================= ОСНОВНОЙ ЭКРАН ======================= -->
@@ -436,7 +437,8 @@ tr.rejected td { background: rgba(255, 107, 107, 0.12); }
             <button class="btn btn-secondary" id="logBtn" style="display:none" onclick="openLog(null)">📋 Журнал правок</button>
             <button class="btn btn-secondary q-btn" id="queueBtn" onclick="openQueue()" title="Записи, которые ещё не дошли до сервера">⏳ Очередь</button>
             <button class="btn btn-secondary" onclick="refreshRecords(true)" title="Обновить">⟳</button>
-            <button class="btn btn-danger" onclick="handleLogout()">Выход</button>
+            <button type="button" class="btn btn-secondary" onclick="goMenu()" title="Вернуться в меню рабочих сервисов">🏠 Сервисы</button>
+            <button class="btn btn-danger" onclick="handleLogout()">🚪 Выход</button>
         </div>
     </div>
 
@@ -938,6 +940,10 @@ function handleLogout() {
 }
 
 function isAdmin() { return me.role === 'admin'; }
+
+// В меню рабочих сервисов. Неотправленное остаётся в памяти браузера
+// и уйдёт при следующем входе; браузер сам предупредит о нём при уходе
+function goMenu() { location.href = 'https://energo380.github.io/menu/'; }
 
 function showMain() {
     $('loginScreen').style.display = 'none';
