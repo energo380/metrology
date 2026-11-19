@@ -1,0 +1,5 @@
+# данные и пароли - не публиковать
+Import.gs
+*.xlsx
+*.xlsm
+data.json

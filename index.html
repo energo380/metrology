@@ -1,0 +1,1556 @@
+<!-- ============================================================
+     INDEX.HTML - Журнал движения СИ при поверке в ЦСМ, версия 1.0
+     АО "Новосибирская птицефабрика", метрология
+     Нужен серверный скрипт Code.gs v1.0 (Google Apps Script)
+
+     Что умеет:
+       1. Вход по паролю. Роли: метролог и администратор
+       2. Сводка по этапам: в метрологии, в ЦСМ, вернулось,
+          выдано в цех, «дольше N дней», не прошли проверку
+       3. Поиск и фильтры: статус, цех / место, примечание
+       4. Карточка прибора: 4 даты этапов с кнопкой «Сегодня»,
+          статус и «Дней всего» считаются сами, как в Excel
+       5. Отметка этапа сразу для нескольких выбранных приборов
+       6. Печать журнала за неделю
+       7. Через N дней после выдачи в цех запись закрывается:
+          исправить может только администратор
+       8. Администратор: удаление и журнал правок (кто, когда, что)
+     ============================================================ -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Движение СИ - метрология</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    color: #ffffff;
+}
+
+button, input, select, textarea { font-family: inherit; }
+
+/* ---------- вход ---------- */
+.login-container { display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+.login-box {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    padding: 40px;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.grad-text {
+    background: linear-gradient(90deg, #00d4ff, #00ff88);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.login-box h1 { text-align: center; margin-bottom: 10px; font-size: 24px; }
+.login-box h2 { text-align: center; margin-bottom: 30px; font-size: 14px; color: #aaa; font-weight: normal; line-height: 1.5; }
+.login-box input {
+    width: 100%; padding: 15px; border: none; border-radius: 10px;
+    background: rgba(255, 255, 255, 0.1); color: #fff; font-size: 16px; transition: all 0.3s ease;
+}
+.login-box input:focus { outline: none; background: rgba(255, 255, 255, 0.2); box-shadow: 0 0 20px rgba(0, 212, 255, 0.3); }
+.login-box input::placeholder { color: #888; }
+.pass-field { position: relative; margin-bottom: 20px; }
+.pass-field input { padding-right: 52px; }
+.pass-eye {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    padding: 8px; border: 0; border-radius: 8px; background: none; color: #aaa; cursor: pointer;
+}
+.pass-eye:hover { color: #fff; }
+.pass-eye svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.pass-eye .i-hide, .pass-eye[aria-pressed="true"] .i-show { display: none; }
+.pass-eye[aria-pressed="true"] .i-hide { display: block; }
+.login-btn {
+    width: 100%; padding: 15px; border: none; border-radius: 10px;
+    background: linear-gradient(90deg, #00d4ff, #00ff88); color: #1a1a2e;
+    font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.3s ease;
+}
+.login-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4); }
+.error-message { color: #ff6b6b; text-align: center; margin-top: 15px; font-size: 14px; min-height: 18px; }
+
+/* ---------- основной экран ---------- */
+.main-container { display: none; padding: 20px; max-width: 1640px; margin: 0 auto; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
+.header h1 { font-size: 24px; }
+.header .sub { color: #888; font-size: 13px; margin-top: 4px; }
+.user-info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.user-badge {
+    background: rgba(0, 212, 255, 0.2); padding: 6px 15px; border-radius: 20px;
+    color: #00d4ff; font-weight: bold; font-size: 14px;
+}
+.user-badge.admin { background: rgba(255, 193, 7, 0.18); color: #ffc107; }
+
+.btn {
+    padding: 10px 18px; border: none; border-radius: 10px; font-size: 14px; font-weight: bold;
+    cursor: pointer; transition: all 0.3s ease; display: inline-flex; align-items: center; gap: 8px;
+    white-space: nowrap;
+}
+.btn-primary { background: linear-gradient(90deg, #00d4ff, #00ff88); color: #1a1a2e; }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4); }
+.btn-secondary { background: rgba(255, 255, 255, 0.1); color: #fff; border: 1px solid rgba(255, 255, 255, 0.2); }
+.btn-secondary:hover { background: rgba(255, 255, 255, 0.2); }
+.btn-danger { background: rgba(255, 107, 107, 0.2); color: #ff6b6b; border: 1px solid rgba(255, 107, 107, 0.3); }
+.btn-danger:hover { background: rgba(255, 107, 107, 0.3); }
+.btn-small { padding: 7px 12px; font-size: 13px; border-radius: 8px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* ---------- сводка ---------- */
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.tile {
+    background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px; padding: 14px 16px; cursor: pointer; transition: all 0.2s ease; text-align: left; color: #fff;
+}
+.tile:hover { background: rgba(255, 255, 255, 0.1); transform: translateY(-2px); }
+.tile.active { border-color: #00d4ff; box-shadow: 0 0 18px rgba(0, 212, 255, 0.25); background: rgba(0, 212, 255, 0.1); }
+.tile .t-num { font-size: 28px; font-weight: bold; line-height: 1.1; }
+.tile .t-label { font-size: 12px; color: #aaa; margin-top: 4px; line-height: 1.3; }
+.tile.s1 .t-num { color: #7fb2ff; }
+.tile.s2 .t-num { color: #00d4ff; }
+.tile.s3 .t-num { color: #b388ff; }
+.tile.s4 .t-num { color: #00ff88; }
+.tile.warn .t-num { color: #ff6b6b; }
+.tile.fail .t-num { color: #ff8a65; }
+.tile.bad .t-num { color: #ffc000; }
+
+/* ---------- фильтры ---------- */
+.toolbar {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px;
+    background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px; padding: 12px;
+}
+.toolbar input, .toolbar select, .field input, .field select, .field textarea {
+    padding: 10px 12px; border: none; border-radius: 10px;
+    background: rgba(255, 255, 255, 0.1); color: #fff; font-size: 14px; transition: all 0.2s ease;
+}
+.toolbar input:focus, .toolbar select:focus, .field input:focus, .field select:focus, .field textarea:focus {
+    outline: none; background: rgba(255, 255, 255, 0.15); box-shadow: 0 0 15px rgba(0, 212, 255, 0.2);
+}
+.toolbar input::placeholder, .field input::placeholder, .field textarea::placeholder { color: #888; }
+select option { background: #1a1a2e; color: #fff; }
+.toolbar .search { flex: 1 1 260px; min-width: 200px; }
+.toolbar select { flex: 0 1 210px; min-width: 150px; }
+.toolbar .count { color: #aaa; font-size: 13px; margin-left: auto; }
+
+/* ---------- таблица ---------- */
+.table-wrap {
+    overflow: auto; max-height: calc(100vh - 120px); border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.03);
+}
+table.journal { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 1400px; font-size: 13px; }
+.journal th {
+    position: sticky; top: 0; z-index: 2; background: #17284a; color: #00d4ff;
+    padding: 10px 8px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15); white-space: nowrap; user-select: none;
+}
+.journal th.sortable { cursor: pointer; }
+.journal th.sortable:hover { color: #fff; }
+.journal th .arrow { color: #00ff88; }
+.journal td { padding: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); vertical-align: top; }
+.journal tbody tr { cursor: pointer; transition: background 0.15s; }
+.journal tbody tr:hover { background: rgba(0, 212, 255, 0.07); }
+.journal tbody tr.selected { background: rgba(0, 255, 136, 0.08); }
+.journal .c-chk { width: 34px; text-align: center; cursor: default; }
+.journal .c-num { width: 58px; white-space: nowrap; color: #aaa; }
+.journal .c-name { min-width: 200px; font-weight: 600; }
+.journal .c-serial { width: 130px; overflow-wrap: anywhere; }
+.journal .c-place { min-width: 150px; color: #ccc; }
+.journal .c-date { width: 88px; white-space: nowrap; text-align: center; }
+.journal .c-days { width: 64px; text-align: center; white-space: nowrap; }
+.journal .c-status { width: 170px; }
+.journal .c-result { width: 120px; }
+.journal .c-note { min-width: 200px; max-width: 320px; color: #bbb; }
+.journal .c-note div { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
+.journal th.c-date { text-align: center; line-height: 1.25; }
+.date-empty { color: #555; }
+.lock { font-size: 11px; opacity: 0.8; }
+input[type="checkbox"] { width: 17px; height: 17px; accent-color: #00d4ff; cursor: pointer; }
+
+.chip { display: inline-block; white-space: nowrap; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; line-height: 1.4; }
+.chip.ok { background: rgba(0, 255, 136, 0.18); color: #00ff88; }
+.chip.long { background: rgba(255, 107, 107, 0.2); color: #ff8080; }
+.chip.bad { background: rgba(255, 192, 0, 0.22); color: #ffc000; }
+.chip.plain { background: rgba(255, 255, 255, 0.1); color: #ddd; }
+.chip.fail { background: rgba(255, 107, 107, 0.2); color: #ff6b6b; }
+.overdue { display: block; color: #ff8080; font-size: 11px; margin-top: 3px; }
+
+.more-row { text-align: center; padding: 14px; }
+.empty { text-align: center; color: #888; padding: 40px 10px; }
+
+/* ---------- карточки (телефон) ---------- */
+.cards { display: none; }
+.card {
+    background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px; padding: 14px; margin-bottom: 10px; cursor: pointer;
+}
+.card.selected { border-color: #00ff88; }
+.card-top { display: flex; gap: 10px; align-items: flex-start; }
+.card-top .ttl { flex: 1; font-weight: 600; line-height: 1.35; }
+.card-top .num { color: #888; font-size: 12px; font-weight: normal; }
+.card .meta { color: #aaa; font-size: 13px; margin: 6px 0 10px; }
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 10px; }
+.step { text-align: center; font-size: 11px; color: #777; }
+.step .bar { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); margin-bottom: 5px; }
+.step.done { color: #ddd; }
+.step.done .bar { background: linear-gradient(90deg, #00d4ff, #00ff88); }
+.card .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.card .note { color: #aaa; font-size: 12px; margin-top: 8px; white-space: pre-line; }
+
+/* ---------- панель выбранных ---------- */
+.selbar {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(150%);
+    background: #10213f; border: 1px solid rgba(0, 212, 255, 0.4); border-radius: 16px;
+    padding: 10px 14px; display: flex; gap: 10px; align-items: center; z-index: 900;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); transition: transform 0.25s ease; flex-wrap: wrap; justify-content: center;
+    max-width: calc(100% - 24px);
+}
+.selbar.show { transform: translateX(-50%) translateY(0); }
+.selbar .sel-count { font-weight: bold; color: #00ff88; }
+
+/* ---------- окна ---------- */
+.modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(5px);
+    z-index: 1000; justify-content: center; align-items: flex-start; padding: 30px 16px; overflow-y: auto;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 20px; width: 100%; max-width: 760px;
+    border: 1px solid rgba(255, 255, 255, 0.12); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); margin: auto;
+}
+.modal.wide { max-width: 1000px; }
+.modal-header {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding: 20px 24px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.modal-header h2 { font-size: 19px; color: #00d4ff; }
+.modal-close { background: none; border: none; color: #aaa; font-size: 28px; cursor: pointer; line-height: 1; padding: 0 4px; }
+.modal-close:hover { color: #fff; }
+.modal-body { padding: 20px 24px; }
+.modal-footer {
+    padding: 16px 24px; border-top: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+}
+.modal-footer .spacer { flex: 1; }
+
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.grid .full { grid-column: 1 / -1; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > label { color: #aaa; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; }
+.field textarea { resize: vertical; min-height: 70px; line-height: 1.4; }
+.field input:disabled, .field select:disabled, .field textarea:disabled { opacity: 0.55; cursor: not-allowed; }
+.req { color: #ff6b6b; }
+
+.stages { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.stage-box { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 12px; }
+.stage-box > label { display: block; color: #00d4ff; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.stage-box > label .n {
+    display: inline-flex; width: 22px; height: 22px; border-radius: 50%; align-items: center; justify-content: center;
+    background: rgba(0, 212, 255, 0.2); margin-right: 6px; font-size: 12px;
+}
+.date-field { display: flex; gap: 6px; align-items: center; position: relative; }
+.date-field .date-text {
+    flex: 1; min-width: 0; width: 100%; padding: 10px 12px; letter-spacing: 0.5px;
+    border: none; border-radius: 10px; background: rgba(255, 255, 255, 0.1); color: #fff; font-size: 14px;
+}
+.date-field .date-text:focus { outline: none; background: rgba(255, 255, 255, 0.15); box-shadow: 0 0 15px rgba(0, 212, 255, 0.2); }
+.date-field .date-text::placeholder { color: #888; }
+.date-field .date-text:disabled { opacity: 0.55; cursor: not-allowed; }
+.date-field .date-native { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; right: 0; bottom: 0; }
+.date-btn {
+    padding: 9px 10px; border-radius: 9px; border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.08); color: #fff; cursor: pointer; font-size: 13px; white-space: nowrap;
+}
+.date-btn:hover { background: rgba(255, 255, 255, 0.18); }
+.date-btn.today { color: #00ff88; border-color: rgba(0, 255, 136, 0.35); }
+.date-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.preview {
+    margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: rgba(0, 212, 255, 0.07);
+    display: flex; gap: 14px; flex-wrap: wrap; align-items: center; font-size: 14px;
+}
+.preview .err { color: #ff6b6b; font-weight: 600; }
+.notice { padding: 12px 14px; border-radius: 12px; margin-bottom: 14px; font-size: 14px; line-height: 1.45; }
+.notice.lock { background: rgba(255, 193, 7, 0.12); border: 1px solid rgba(255, 193, 7, 0.35); color: #ffd54f; }
+.notice.info { background: rgba(0, 212, 255, 0.08); border: 1px solid rgba(0, 212, 255, 0.25); color: #9fe9ff; }
+.notice.err { background: rgba(255, 107, 107, 0.12); border: 1px solid rgba(255, 107, 107, 0.35); color: #ff9a9a; }
+.audit { color: #888; font-size: 12px; line-height: 1.5; }
+.changes { white-space: pre-line; color: #ffd54f; font-size: 13px; }
+
+.log-list { max-height: 60vh; overflow-y: auto; }
+.log-item { padding: 10px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.07); font-size: 13px; line-height: 1.5; }
+.log-item .when { color: #888; font-size: 12px; }
+.log-item .who { color: #00d4ff; font-weight: 600; }
+.log-item .from { color: #ff9a9a; text-decoration: line-through; }
+.log-item .to { color: #00ff88; }
+
+.bulk-list { max-height: 170px; overflow-y: auto; font-size: 13px; color: #ccc; background: rgba(255, 255, 255, 0.04); border-radius: 10px; padding: 8px 12px; margin-bottom: 14px; }
+.bulk-list div { padding: 3px 0; }
+.week-nav { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.check { display: flex; gap: 10px; align-items: center; font-size: 14px; color: #ddd; cursor: pointer; }
+
+/* ---------- загрузка, уведомления ---------- */
+.loading-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 3000;
+    justify-content: center; align-items: center;
+}
+.loading-overlay.active { display: flex; }
+.spinner {
+    width: 54px; height: 54px; border: 4px solid rgba(255, 255, 255, 0.15); border-top-color: #00d4ff;
+    border-radius: 50%; animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.toast {
+    position: fixed; top: 20px; right: 20px; padding: 14px 20px; border-radius: 12px; color: #fff;
+    font-weight: 600; z-index: 4000; transform: translateX(130%); transition: transform 0.3s ease;
+    max-width: 380px; box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4); line-height: 1.4;
+}
+.toast.show { transform: translateX(0); }
+.toast.success { background: linear-gradient(90deg, #00b37a, #00c896); }
+.toast.error { background: linear-gradient(90deg, #d84343, #ff6b6b); }
+.toast.info { background: linear-gradient(90deg, #0088cc, #00a8e8); }
+
+#printArea { display: none; }
+
+@media (max-width: 900px) {
+    .main-container { padding: 12px; }
+    .table-wrap { display: none; }
+    .cards { display: block; }
+    .header h1 { font-size: 20px; }
+    .summary { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .tile { padding: 9px 10px; border-radius: 12px; }
+    .tile .t-num { font-size: 20px; }
+    .tile .t-label { font-size: 11px; }
+    .header .btn { padding: 8px 12px; font-size: 13px; }
+    .toolbar select { flex: 1 1 140px; }
+    .grid, .stages { grid-template-columns: 1fr; }
+    .modal-overlay { padding: 10px 6px; }
+    .modal-header, .modal-body, .modal-footer { padding-left: 16px; padding-right: 16px; }
+}
+
+/* ---------- печать ---------- */
+@media print {
+    @page { size: A4 landscape; margin: 10mm; }
+    body { background: #fff !important; color: #000; }
+    body > *:not(#printArea) { display: none !important; }
+    #printArea { display: block !important; }
+    .p-head { text-align: center; font-size: 13pt; font-weight: bold; line-height: 1.35; margin-bottom: 8px; }
+    .p-sub { text-align: center; font-size: 9pt; margin-bottom: 8px; }
+    table.p-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+    .p-table th, .p-table td { border: 1px solid #000; padding: 3px 4px; vertical-align: top; }
+    .p-table th { background: #e6e6e6; -webkit-print-color-adjust: exact; print-color-adjust: exact; text-align: center; }
+    .p-table td.c { text-align: center; white-space: nowrap; }
+    .p-table td.hl { font-weight: bold; text-decoration: underline; }
+    .p-table td.note { white-space: pre-line; }
+    .p-table tr { page-break-inside: avoid; }
+    .p-sign { margin-top: 18px; font-size: 10pt; display: flex; gap: 60px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ======================= ВХОД ======================= -->
+<div class="login-container" id="loginScreen">
+    <div class="login-box">
+        <h1 class="grad-text">📏 Движение СИ</h1>
+        <h2>Журнал поверки в ЦСМ<br>Метрология · АО «Новосибирская птицефабрика»</h2>
+        <div class="pass-field">
+            <input type="password" id="passwordInput" placeholder="Пароль" autocomplete="current-password">
+            <button type="button" class="pass-eye" id="passEye" aria-label="Показать пароль" aria-pressed="false" onclick="togglePass()">
+                <svg class="i-show" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="i-hide" viewBox="0 0 24 24"><path d="M17.9 17.9A10.4 10.4 0 0 1 12 19c-7 0-11-7-11-7a19 19 0 0 1 5.1-5.9M9.9 5.2A9.6 9.6 0 0 1 12 5c7 0 11 7 11 7a19 19 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2M1 1l22 22"/></svg>
+            </button>
+        </div>
+        <button class="login-btn" onclick="handleLogin()">Войти</button>
+        <div class="error-message" id="loginError"></div>
+    </div>
+</div>
+
+<!-- ======================= ОСНОВНОЙ ЭКРАН ======================= -->
+<div class="main-container" id="mainScreen">
+    <div class="header">
+        <div>
+            <h1 class="grad-text">📏 Журнал движения СИ при поверке в ЦСМ</h1>
+            <div class="sub" id="headerSub"></div>
+        </div>
+        <div class="user-info">
+            <span class="user-badge" id="userBadge"></span>
+            <button class="btn btn-primary" onclick="openRecord(null)">＋ Прибор</button>
+            <button class="btn btn-secondary" onclick="openPrint()">🖨 Печать недели</button>
+            <button class="btn btn-secondary" id="logBtn" style="display:none" onclick="openLog(null)">📋 Журнал правок</button>
+            <button class="btn btn-secondary" onclick="refreshRecords(true)" title="Обновить">⟳</button>
+            <button class="btn btn-danger" onclick="handleLogout()">Выход</button>
+        </div>
+    </div>
+
+    <div class="summary" id="summary"></div>
+
+    <div class="toolbar">
+        <input type="search" class="search" id="fSearch" placeholder="🔍 Поиск: наименование, зав. №, место, дополнение, №" oninput="onFilterChange()">
+        <select id="fStatus" onchange="onFilterChange()"></select>
+        <select id="fPlace" onchange="onFilterChange()"></select>
+        <select id="fResult" onchange="onFilterChange()">
+            <option value="">Примечание: все</option>
+            <option value="Поверен">Поверен</option>
+            <option value="Не прошёл проверку">Не прошёл проверку</option>
+            <option value="-">Без примечания</option>
+        </select>
+        <button class="btn btn-secondary btn-small" onclick="clearFilters()">Сбросить</button>
+        <span class="count" id="countInfo"></span>
+    </div>
+
+    <div class="table-wrap">
+        <table class="journal">
+            <thead>
+                <tr>
+                    <th class="c-chk"><input type="checkbox" id="chkAll" title="Выбрать все показанные" onclick="toggleAll(this.checked)"></th>
+                    <th class="c-num sortable" data-sort="num">№</th>
+                    <th class="c-name sortable" data-sort="name">Наименование СИ</th>
+                    <th class="c-serial">Зав. №</th>
+                    <th class="c-place sortable" data-sort="place">Цех / место</th>
+                    <th class="c-date sortable" data-sort="d1">1. Цех→<br>Метрология</th>
+                    <th class="c-date sortable" data-sort="d2">2. Метрология<br>→ЦСМ</th>
+                    <th class="c-date sortable" data-sort="d3">3. ЦСМ→<br>Метрология</th>
+                    <th class="c-date sortable" data-sort="d4">4. Метрология<br>→Цех</th>
+                    <th class="c-days sortable" data-sort="days">Дней<br>всего</th>
+                    <th class="c-status">Статус</th>
+                    <th class="c-result">Примечание</th>
+                    <th class="c-note">Дополнение</th>
+                </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+        </table>
+    </div>
+    <div class="cards" id="cards"></div>
+    <div class="more-row" id="moreRow" style="display:none">
+        <button class="btn btn-secondary" onclick="showMore()">Показать ещё</button>
+    </div>
+</div>
+
+<!-- панель выбранных -->
+<div class="selbar" id="selbar">
+    <span>Выбрано: <span class="sel-count" id="selCount">0</span></span>
+    <button class="btn btn-primary btn-small" onclick="openBulk()">Отметить этап…</button>
+    <button class="btn btn-secondary btn-small" onclick="clearSelection()">Снять выбор</button>
+</div>
+
+<!-- ======================= КАРТОЧКА ПРИБОРА ======================= -->
+<div class="modal-overlay" id="recordModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="recTitle">Новый прибор</h2>
+            <button class="modal-close" onclick="closeModal('recordModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div id="recNotice"></div>
+            <div class="grid">
+                <div class="field full">
+                    <label>Наименование СИ <span class="req">*</span></label>
+                    <input id="rName" list="dlNames" maxlength="300" placeholder="Например: Манометр технический ТМ5" oninput="updatePreview()">
+                </div>
+                <div class="field">
+                    <label>Зав. №</label>
+                    <input id="rSerial" maxlength="100" placeholder="Заводской номер">
+                </div>
+                <div class="field">
+                    <label>Цех / место</label>
+                    <input id="rPlace" list="dlPlaces" maxlength="200" placeholder="Выберите или впишите">
+                </div>
+            </div>
+
+            <h3 style="color:#00d4ff;font-size:15px;margin:20px 0 10px">Движение прибора</h3>
+            <div class="stages" id="stageBoxes"></div>
+            <div class="preview" id="recPreview"></div>
+
+            <div class="grid" style="margin-top:18px">
+                <div class="field">
+                    <label>Примечание</label>
+                    <select id="rResult">
+                        <option value="">—</option>
+                        <option value="Поверен">Поверен</option>
+                        <option value="Не прошёл проверку">Не прошёл проверку</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Кто вносит</label>
+                    <select id="rBy"></select>
+                </div>
+                <div class="field full">
+                    <label>Дополнение</label>
+                    <textarea id="rNote" maxlength="3000" placeholder="Например: Поверка на месте; Проведено ТО, контроль показаний"></textarea>
+                </div>
+                <div class="field full" id="rChangesWrap" style="display:none">
+                    <label>Изменения</label>
+                    <div class="changes" id="rChanges"></div>
+                </div>
+            </div>
+            <div class="audit" id="recAudit" style="margin-top:14px"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-danger" id="recDelete" onclick="deleteRecord()">Удалить</button>
+            <button class="btn btn-secondary" id="recHistory" onclick="openLog(currentRec && currentRec.id)">📋 История</button>
+            <span class="spacer"></span>
+            <button class="btn btn-secondary" onclick="closeModal('recordModal')">Отмена</button>
+            <button class="btn btn-secondary" id="recSaveMore" onclick="saveRecord(true)" title="Сохранить и сразу внести следующий прибор с тем же местом и датой">Сохранить и ещё</button>
+            <button class="btn btn-primary" id="recSave" onclick="saveRecord(false)">Сохранить</button>
+        </div>
+    </div>
+</div>
+
+<!-- ======================= ОТМЕТКА ЭТАПА ДЛЯ НЕСКОЛЬКИХ ======================= -->
+<div class="modal-overlay" id="bulkModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Отметить этап для выбранных</h2>
+            <button class="modal-close" onclick="closeModal('bulkModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="bulk-list" id="bulkList"></div>
+            <div class="grid">
+                <div class="field">
+                    <label>Этап</label>
+                    <select id="bStage" onchange="onBulkStage()">
+                        <option value="1">1. Цех → Метрология</option>
+                        <option value="2">2. Метрология → ЦСМ</option>
+                        <option value="3">3. ЦСМ → Метрология</option>
+                        <option value="4">4. Метрология → Цех</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Дата</label>
+                    <div class="date-field" id="bDateWrap"></div>
+                </div>
+                <div class="field">
+                    <label>Примечание</label>
+                    <select id="bResult">
+                        <option value="keep">не менять</option>
+                        <option value="Поверен">Поверен</option>
+                        <option value="Не прошёл проверку">Не прошёл проверку</option>
+                        <option value="">очистить</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Кто вносит</label>
+                    <select id="bBy"></select>
+                </div>
+            </div>
+            <div id="bulkResult" style="margin-top:14px"></div>
+        </div>
+        <div class="modal-footer">
+            <span class="spacer"></span>
+            <button class="btn btn-secondary" onclick="closeModal('bulkModal')">Закрыть</button>
+            <button class="btn btn-primary" id="bulkApply" onclick="applyBulk()">Применить</button>
+        </div>
+    </div>
+</div>
+
+<!-- ======================= ПЕЧАТЬ НЕДЕЛИ ======================= -->
+<div class="modal-overlay" id="printModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Печать журнала за неделю</h2>
+            <button class="modal-close" onclick="closeModal('printModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="week-nav">
+                <button class="btn btn-secondary btn-small" onclick="shiftWeek(-7)">◀ Пред.</button>
+                <div class="field" style="flex:1;min-width:150px"><label>С</label><div class="date-field" id="pFromWrap"></div></div>
+                <div class="field" style="flex:1;min-width:150px"><label>По</label><div class="date-field" id="pToWrap"></div></div>
+                <button class="btn btn-secondary btn-small" onclick="shiftWeek(7)">След. ▶</button>
+            </div>
+            <div class="grid" style="margin-top:16px">
+                <div class="field">
+                    <label>Цех / место</label>
+                    <select id="pPlace"></select>
+                </div>
+                <div class="field">
+                    <label>Ответственный (подпись)</label>
+                    <select id="pSigner"></select>
+                </div>
+                <label class="check full"><input type="checkbox" id="pOpen" checked> Добавить приборы, которые сейчас не выданы в цех (даже без движения за неделю)</label>
+            </div>
+            <div class="notice info" style="margin:16px 0 0" id="pInfo"></div>
+        </div>
+        <div class="modal-footer">
+            <span class="spacer"></span>
+            <button class="btn btn-secondary" onclick="closeModal('printModal')">Отмена</button>
+            <button class="btn btn-primary" onclick="doPrint()">🖨 Печать</button>
+        </div>
+    </div>
+</div>
+
+<!-- ======================= ЖУРНАЛ ПРАВОК ======================= -->
+<div class="modal-overlay" id="logModal">
+    <div class="modal wide">
+        <div class="modal-header">
+            <h2 id="logTitle">Журнал правок</h2>
+            <button class="modal-close" onclick="closeModal('logModal')">×</button>
+        </div>
+        <div class="modal-body">
+            <input type="search" id="logSearch" placeholder="🔍 Фильтр: ФИО, №, поле, значение" style="width:100%;padding:10px 12px;border:none;border-radius:10px;background:rgba(255,255,255,.1);color:#fff;font-size:14px;margin-bottom:10px" oninput="renderLog()">
+            <div class="log-list" id="logList"></div>
+        </div>
+    </div>
+</div>
+
+<datalist id="dlNames"></datalist>
+<datalist id="dlPlaces"></datalist>
+
+<div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div></div>
+<div class="toast" id="toast"></div>
+<div id="printArea"></div>
+
+<script>
+// ============================================================
+// НАСТРОЙКИ
+// ============================================================
+// Адрес веб-приложения Apps Script (Развертывание -> Веб-приложение -> URL)
+const API_URL = 'ВСТАВЬТЕ_СЮДА_АДРЕС_ВЕБ-ПРИЛОЖЕНИЯ';
+const API_TIMEOUT = 30000;
+const PAGE_SIZE = 200;
+
+const STAGES = [
+    { key: 'd1', title: '1. Цех → Метрология', short: 'Цех→Метр.' },
+    { key: 'd2', title: '2. Метрология → ЦСМ', short: 'Метр.→ЦСМ' },
+    { key: 'd3', title: '3. ЦСМ → Метрология', short: 'ЦСМ→Метр.' },
+    { key: 'd4', title: '4. Метрология → Цех', short: 'Метр.→Цех' }
+];
+const STATUS_LIST = ['Поступил в метрологию', 'В ЦСМ на поверке', 'Вернулось из ЦСМ', 'Выдано в цех', 'Некорректная дата'];
+
+let me = { name: '', role: '', password: '' };
+let people = [];
+let places = [];
+let settings = { lockDays: 10, warnDays: 20, org: 'АО "Новосибирская птицефабрика"' };
+let records = [];
+let today = '';
+let lastLoad = 0;
+
+let tileFilter = '';
+let sortKey = 'num', sortDir = -1;
+let shownLimit = PAGE_SIZE;
+let filtered = [];
+let selected = new Set();
+let currentRec = null;      // открытая запись (null - новая)
+let newClientId = '';
+let logEntries = [];
+let toastTimer = null, filterTimer = null;
+
+// ============================================================
+// ВСПОМОГАТЕЛЬНЫЕ
+// ============================================================
+
+function esc(v) {
+    return String(v === null || v === undefined ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function $(id) { return document.getElementById(id); }
+function showLoading() { $('loadingOverlay').classList.add('active'); }
+function hideLoading() { $('loadingOverlay').classList.remove('active'); }
+function showToast(msg, type) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + (type || 'success') + ' show';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.remove('show'); }, type === 'error' ? 6000 : 3000);
+}
+function newId(p) { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+function localIso(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+function todayIso() { return localIso(new Date()); }
+function isoToRu(iso) { if (!iso) return ''; const p = iso.split('-'); return p[2] + '.' + p[1] + '.' + p[0]; }
+function isoToShort(iso) { if (!iso) return ''; const p = iso.split('-'); return p[2] + '.' + p[1] + '.' + p[0].slice(2); }
+function dayNum(iso) { const p = iso.split('-').map(Number); return Math.round(Date.UTC(p[0], p[1] - 1, p[2]) / 86400000); }
+function isoFromDayNum(n) { const d = new Date(n * 86400000); return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()); }
+function validIso(s) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    const p = s.split('-').map(Number);
+    const d = new Date(Date.UTC(p[0], p[1] - 1, p[2]));
+    return d.getUTCFullYear() === p[0] && d.getUTCMonth() === p[1] - 1 && d.getUTCDate() === p[2] && p[0] >= 2000 && p[0] <= 2100;
+}
+// "дд.мм.гггг" (или дд.мм.гг) -> iso; '' если пусто; null если ошибка
+function ruToIso(text) {
+    text = String(text || '').trim();
+    if (!text) return '';
+    const m = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/);
+    if (!m) return null;
+    let y = Number(m[3]); if (y < 100) y += 2000;
+    const iso = y + '-' + pad2(Number(m[2])) + '-' + pad2(Number(m[1]));
+    return validIso(iso) ? iso : null;
+}
+function maskRuDate(raw) {
+    const digits = String(raw).replace(/\D/g, '').slice(0, 8);
+    let out = digits.slice(0, 2);
+    if (digits.length > 2) out += '.' + digits.slice(2, 4);
+    if (digits.length > 4) out += '.' + digits.slice(4);
+    return out;
+}
+function curToday() { return today && today > todayIso() ? today : todayIso(); }
+
+// Статус и «Дней всего» - так же, как формулы J и K в Excel
+function calcStatus(r) {
+    if ((r.d2 && r.d1 && r.d2 < r.d1) || (r.d3 && r.d2 && r.d3 < r.d2) || (r.d4 && r.d3 && r.d4 < r.d3)) return 'Некорректная дата';
+    if (r.d4) return 'Выдано в цех';
+    if (r.d3) return 'Вернулось из ЦСМ';
+    if (r.d2) return 'В ЦСМ на поверке';
+    if (r.d1) return 'Поступил в метрологию';
+    return '-';
+}
+function calcDays(r) {
+    if (!r.d1) return '';
+    let max = r.d1;
+    STAGES.forEach(function (s) { if (r[s.key] && r[s.key] > max) max = r[s.key]; });
+    return max === r.d1 ? '' : dayNum(max) - dayNum(r.d1);
+}
+// сколько дней прибор не в цеху (для невыданных)
+function daysInWork(r) {
+    if (!r.d1 || r.d4) return null;
+    return dayNum(curToday()) - dayNum(r.d1);
+}
+function isOverdue(r) { const d = daysInWork(r); return d !== null && d >= settings.warnDays; }
+function validateRec(r) {
+    if (!r.name) return 'Укажите наименование СИ';
+    if (!r.d1 && (r.d2 || r.d3 || r.d4)) return 'Сначала заполните дату этапа 1 «Цех → Метрология»';
+    let prev = null;
+    const tomorrow = dayNum(curToday()) + 1;
+    for (let i = 0; i < STAGES.length; i++) {
+        const s = STAGES[i];
+        if (!r[s.key]) continue;
+        if (dayNum(r[s.key]) > tomorrow) return 'Дата этапа «' + s.title + '» ещё не наступила';
+        if (prev && r[s.key] < r[prev.key]) return 'Дата этапа «' + s.title + '» раньше даты этапа «' + prev.title + '»';
+        prev = s;
+    }
+    return '';
+}
+function statusChip(r) {
+    const st = r.status || calcStatus(r);
+    let cls = 'plain';
+    if (st === 'Некорректная дата') cls = 'bad';
+    else if (r.days !== '' && r.days !== null && r.days !== undefined) cls = Number(r.days) >= settings.warnDays ? 'long' : 'ok';
+    return '<span class="chip ' + cls + '">' + esc(st) + '</span>';
+}
+function resultChip(v) {
+    if (v === 'Поверен') return '<span class="chip ok">Поверен</span>';
+    if (v === 'Не прошёл проверку') return '<span class="chip fail">Не прошёл проверку</span>';
+    return '';
+}
+
+// ============================================================
+// СВЯЗЬ С СЕРВЕРОМ (JSONP, как в заявках на материалы)
+// ============================================================
+
+function apiRequest(params) {
+    if (window.MOCK_API) {   // демо-режим для проверки без сервера
+        return new Promise(function (res) { setTimeout(function () { res(window.MOCK_API(params)); }, 250); });
+    }
+    return new Promise(function (resolve) {
+        if (!/^https:\/\//.test(API_URL)) {
+            resolve({ success: false, error: 'Не указан адрес сервера (API_URL в index.html)' });
+            return;
+        }
+        const cb = 'jsonp_cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+        const url = new URL(API_URL);
+        Object.keys(params).forEach(function (k) { url.searchParams.append(k, params[k]); });
+        url.searchParams.append('callback', cb);
+        let done = false, timer = null, script = null;
+        function cleanup() {
+            done = true;
+            if (timer) clearTimeout(timer);
+            try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+            if (script && script.parentNode) script.parentNode.removeChild(script);
+        }
+        window[cb] = function (data) { if (!done) { resolve(data); cleanup(); } };
+        timer = setTimeout(function () {
+            if (!done) { resolve({ success: false, transport: true, error: 'Сервер долго отвечает. Обновите журнал и проверьте, сохранилось ли.' }); cleanup(); }
+        }, API_TIMEOUT);
+        script = document.createElement('script');
+        script.src = url.toString();
+        script.onerror = function () { if (!done) { resolve({ success: false, transport: true, error: 'Нет связи с сервером' }); cleanup(); } };
+        document.head.appendChild(script);
+    });
+}
+
+// ============================================================
+// ВХОД / ВЫХОД
+// ============================================================
+
+function togglePass() {
+    const b = $('passEye'), on = b.getAttribute('aria-pressed') !== 'true';
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    $('passwordInput').type = on ? 'text' : 'password';
+}
+
+async function handleLogin() {
+    const pwd = $('passwordInput').value.trim();
+    if (!pwd) { $('loginError').textContent = 'Введите пароль'; return; }
+    $('loginError').textContent = '';
+    showLoading();
+    const res = await apiRequest({ action: 'init', password: pwd });
+    hideLoading();
+    if (res && res.success) {
+        applyInit(res, pwd);
+        showMain();
+        showToast('Добро пожаловать, ' + me.name + '!', 'success');
+    } else {
+        $('loginError').textContent = (res && res.error) || 'Неверный пароль';
+    }
+}
+
+function applyInit(res, pwd) {
+    me = { name: res.user.name, role: res.user.role, password: pwd };
+    people = res.people || [];
+    places = res.places || [];
+    settings = Object.assign(settings, res.settings || {});
+    today = res.today || '';
+    records = res.records || [];
+    lastLoad = Date.now();
+    try { sessionStorage.setItem('si_user', JSON.stringify({ password: pwd })); } catch (e) { }
+}
+
+async function checkSession() {
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem('si_user') || 'null'); } catch (e) { saved = null; }
+    if (!saved || !saved.password) return;
+    showLoading();
+    const res = await apiRequest({ action: 'init', password: saved.password });
+    hideLoading();
+    if (res && res.success) { applyInit(res, saved.password); showMain(); }
+    else { try { sessionStorage.removeItem('si_user'); } catch (e) { } }
+}
+
+function handleLogout() {
+    try { sessionStorage.removeItem('si_user'); } catch (e) { }
+    me = { name: '', role: '', password: '' };
+    records = []; selected.clear();
+    document.querySelectorAll('.modal-overlay.active').forEach(function (m) { m.classList.remove('active'); });
+    $('mainScreen').style.display = 'none';
+    $('loginScreen').style.display = 'flex';
+    $('passwordInput').value = '';
+    updateSelbar();
+}
+
+function isAdmin() { return me.role === 'admin'; }
+
+function showMain() {
+    $('loginScreen').style.display = 'none';
+    $('mainScreen').style.display = 'block';
+    const b = $('userBadge');
+    b.textContent = me.name + (isAdmin() ? ' · администратор' : ' · метролог');
+    b.className = 'user-badge' + (isAdmin() ? ' admin' : '');
+    $('headerSub').textContent = settings.org + ' · запись закрывается через ' + settings.lockDays + ' дн. после выдачи в цех';
+    $('logBtn').style.display = isAdmin() ? '' : 'none';
+    fillStaticSelects();
+    renderAll();
+}
+
+async function refreshRecords(manual) {
+    if (!me.password) return;
+    if (manual) showLoading();
+    const res = await apiRequest({ action: 'list', password: me.password });
+    if (manual) hideLoading();
+    if (res && res.success) {
+        records = res.records || [];
+        if (res.today) today = res.today;
+        lastLoad = Date.now();
+        const ids = new Set(records.map(function (r) { return r.id; }));
+        selected.forEach(function (id) { if (!ids.has(id)) selected.delete(id); });
+        renderAll();
+        if (manual) showToast('Журнал обновлён', 'info');
+    } else if (manual) {
+        showToast((res && res.error) || 'Не удалось обновить', 'error');
+    }
+}
+
+document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && me.password && Date.now() - lastLoad > 60000 &&
+        !document.querySelector('.modal-overlay.active')) {
+        refreshRecords(false);
+    }
+});
+
+// ============================================================
+// СПРАВОЧНИКИ И ФИЛЬТРЫ
+// ============================================================
+
+function byOptions(selectEl) {
+    const list = people.slice();
+    if (list.indexOf(me.name) < 0) list.push(me.name);
+    selectEl.innerHTML = list.map(function (n) { return '<option>' + esc(n) + '</option>'; }).join('');
+    selectEl.value = me.name;
+}
+
+function allPlaces() {
+    const set = new Set(places);
+    records.forEach(function (r) { if (r.place) set.add(r.place); });
+    return Array.from(set).sort(function (a, b) { return a.localeCompare(b, 'ru'); });
+}
+
+function fillStaticSelects() {
+    $('fStatus').innerHTML = '<option value="">Статус: все</option>' +
+        STATUS_LIST.map(function (s) { return '<option>' + esc(s) + '</option>'; }).join('');
+    refreshPlaceLists();
+    byOptions($('rBy'));
+    byOptions($('bBy'));
+}
+
+function refreshPlaceLists() {
+    const pl = allPlaces();
+    const keep = $('fPlace').value;
+    $('fPlace').innerHTML = '<option value="">Цех / место: все</option>' +
+        pl.map(function (p) { return '<option>' + esc(p) + '</option>'; }).join('');
+    $('fPlace').value = pl.indexOf(keep) >= 0 ? keep : '';
+    $('dlPlaces').innerHTML = pl.map(function (p) { return '<option value="' + esc(p) + '">'; }).join('');
+    const names = Array.from(new Set(records.map(function (r) { return r.name; }).filter(Boolean)))
+        .sort(function (a, b) { return a.localeCompare(b, 'ru'); });
+    $('dlNames').innerHTML = names.map(function (n) { return '<option value="' + esc(n) + '">'; }).join('');
+}
+
+function onFilterChange() {
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(function () { shownLimit = PAGE_SIZE; renderList(); }, 150);
+}
+
+function clearFilters() {
+    $('fSearch').value = ''; $('fStatus').value = ''; $('fPlace').value = ''; $('fResult').value = '';
+    tileFilter = '';
+    shownLimit = PAGE_SIZE;
+    renderAll();
+}
+
+function setTile(key) {
+    tileFilter = tileFilter === key ? '' : key;
+    if (tileFilter) $('fStatus').value = '';
+    shownLimit = PAGE_SIZE;
+    renderAll();
+}
+
+function applyFilters() {
+    const q = $('fSearch').value.trim().toLowerCase();
+    const st = $('fStatus').value, pl = $('fPlace').value, rs = $('fResult').value;
+    const words = q ? q.split(/\s+/) : [];
+    let list = records.filter(function (r) {
+        if (st && r.status !== st) return false;
+        if (pl && r.place !== pl) return false;
+        if (rs === '-' && r.result) return false;
+        if (rs && rs !== '-' && r.result !== rs) return false;
+        if (tileFilter) {
+            if (tileFilter === 'overdue' && !isOverdue(r)) return false;
+            if (tileFilter === 'fail' && r.result !== 'Не прошёл проверку') return false;
+            if (tileFilter.indexOf('st:') === 0 && r.status !== tileFilter.slice(3)) return false;
+        }
+        if (words.length) {
+            const hay = (r.num + ' ' + r.name + ' ' + r.serial + ' ' + r.place + ' ' + r.note + ' ' + r.result).toLowerCase();
+            for (let i = 0; i < words.length; i++) if (hay.indexOf(words[i]) < 0) return false;
+        }
+        return true;
+    });
+    const k = sortKey, dir = sortDir;
+    list.sort(function (a, b) {
+        let x = a[k], y = b[k];
+        if (k === 'num' || k === 'days') { x = x === '' ? -1 : Number(x); y = y === '' ? -1 : Number(y); }
+        else { x = String(x || ''); y = String(y || ''); if (!x && y) return 1; if (x && !y) return -1; }
+        if (x < y) return -dir;
+        if (x > y) return dir;
+        return b.num - a.num;
+    });
+    return list;
+}
+
+// ============================================================
+// ОТРИСОВКА
+// ============================================================
+
+function renderAll() { renderSummary(); refreshPlaceLists(); renderList(); }
+
+function renderSummary() {
+    const c = { total: records.length, overdue: 0, fail: 0 };
+    STATUS_LIST.forEach(function (s) { c[s] = 0; });
+    records.forEach(function (r) {
+        if (c[r.status] !== undefined) c[r.status]++;
+        if (isOverdue(r)) c.overdue++;
+        if (r.result === 'Не прошёл проверку') c.fail++;
+    });
+    const tiles = [
+        { key: '', cls: '', n: c.total, label: 'Всего приборов в журнале' },
+        { key: 'st:Поступил в метрологию', cls: 's1', n: c['Поступил в метрологию'], label: '1. Поступил в метрологию' },
+        { key: 'st:В ЦСМ на поверке', cls: 's2', n: c['В ЦСМ на поверке'], label: '2. В ЦСМ на поверке' },
+        { key: 'st:Вернулось из ЦСМ', cls: 's3', n: c['Вернулось из ЦСМ'], label: '3. Вернулось из ЦСМ' },
+        { key: 'st:Выдано в цех', cls: 's4', n: c['Выдано в цех'], label: '4. Выдано в цех' },
+        { key: 'overdue', cls: 'warn', n: c.overdue, label: 'Не в цеху ' + settings.warnDays + ' дн. и дольше' },
+        { key: 'fail', cls: 'fail', n: c.fail, label: 'Не прошли проверку' }
+    ];
+    if (c['Некорректная дата']) tiles.push({ key: 'st:Некорректная дата', cls: 'bad', n: c['Некорректная дата'], label: 'Некорректная дата' });
+    $('summary').innerHTML = tiles.map(function (t) {
+        const active = t.key === tileFilter && (t.key || !tileFilter);
+        return '<button class="tile ' + t.cls + (active && t.key ? ' active' : '') + '" onclick="setTile(\'' + esc(t.key) + '\')">' +
+            '<div class="t-num">' + t.n + '</div><div class="t-label">' + esc(t.label) + '</div></button>';
+    }).join('');
+}
+
+function dateCell(iso) {
+    return iso ? esc(isoToShort(iso)) : '<span class="date-empty">—</span>';
+}
+
+function renderList() {
+    filtered = applyFilters();
+    const part = filtered.slice(0, shownLimit);
+    $('countInfo').textContent = 'Показано ' + part.length + ' из ' + filtered.length +
+        (filtered.length !== records.length ? ' (всего ' + records.length + ')' : '');
+
+    document.querySelectorAll('.journal th.sortable').forEach(function (th) {
+        const k = th.getAttribute('data-sort');
+        const base = th.innerHTML.replace(/ <span class="arrow">.*<\/span>$/, '');
+        th.innerHTML = base + (k === sortKey ? ' <span class="arrow">' + (sortDir > 0 ? '▲' : '▼') + '</span>' : '');
+    });
+
+    if (!part.length) {
+        $('tbody').innerHTML = '<tr><td colspan="13" class="empty">Ничего не найдено</td></tr>';
+        $('cards').innerHTML = '<div class="empty">Ничего не найдено</div>';
+    } else {
+        $('tbody').innerHTML = part.map(function (r) {
+            const sel = selected.has(r.id);
+            const wd = daysInWork(r);
+            return '<tr data-id="' + esc(r.id) + '" class="' + (sel ? 'selected' : '') + '">' +
+                '<td class="c-chk" onclick="event.stopPropagation()"><input type="checkbox" ' + (sel ? 'checked' : '') +
+                    ' onclick="toggleSel(\'' + esc(r.id) + '\', this.checked)"></td>' +
+                '<td class="c-num">' + r.num + (r.locked ? ' <span class="lock" title="Запись закрыта">🔒</span>' : '') + '</td>' +
+                '<td class="c-name">' + esc(r.name) + '</td>' +
+                '<td class="c-serial">' + esc(r.serial) + '</td>' +
+                '<td class="c-place">' + esc(r.place) + '</td>' +
+                '<td class="c-date">' + dateCell(r.d1) + '</td>' +
+                '<td class="c-date">' + dateCell(r.d2) + '</td>' +
+                '<td class="c-date">' + dateCell(r.d3) + '</td>' +
+                '<td class="c-date">' + dateCell(r.d4) + '</td>' +
+                '<td class="c-days">' + esc(r.days) + '</td>' +
+                '<td class="c-status">' + statusChip(r) +
+                    (isOverdue(r) ? '<span class="overdue">⚠ не в цеху ' + wd + ' дн.</span>' : '') + '</td>' +
+                '<td class="c-result">' + resultChip(r.result) + '</td>' +
+                '<td class="c-note"><div>' + esc(r.note) + '</div></td>' +
+                '</tr>';
+        }).join('');
+
+        $('cards').innerHTML = part.map(function (r) {
+            const sel = selected.has(r.id);
+            const wd = daysInWork(r);
+            return '<div class="card' + (sel ? ' selected' : '') + '" data-id="' + esc(r.id) + '">' +
+                '<div class="card-top"><input type="checkbox" ' + (sel ? 'checked' : '') +
+                    ' onclick="event.stopPropagation(); toggleSel(\'' + esc(r.id) + '\', this.checked)">' +
+                '<div class="ttl"><span class="num">№ ' + r.num + (r.locked ? ' 🔒' : '') + '</span><br>' + esc(r.name) + '</div></div>' +
+                '<div class="meta">' + (r.serial ? 'Зав. № ' + esc(r.serial) + ' · ' : '') + esc(r.place || 'место не указано') + '</div>' +
+                '<div class="steps">' + STAGES.map(function (s) {
+                    return '<div class="step' + (r[s.key] ? ' done' : '') + '"><div class="bar"></div>' +
+                        esc(s.short) + '<br>' + (r[s.key] ? esc(isoToShort(r[s.key])) : '—') + '</div>';
+                }).join('') + '</div>' +
+                '<div class="chips">' + statusChip(r) + resultChip(r.result) +
+                    (r.days !== '' ? '<span class="chip plain">' + r.days + ' дн.</span>' : '') +
+                    (isOverdue(r) ? '<span class="chip long">⚠ не в цеху ' + wd + ' дн.</span>' : '') + '</div>' +
+                (r.note ? '<div class="note">' + esc(r.note) + '</div>' : '') +
+                '</div>';
+        }).join('');
+    }
+    $('moreRow').style.display = filtered.length > shownLimit ? '' : 'none';
+    syncChkAll();
+}
+
+function showMore() { shownLimit += PAGE_SIZE; renderList(); }
+
+// клик по строке / карточке - открыть
+$('tbody').addEventListener('click', function (e) {
+    const tr = e.target.closest('tr[data-id]');
+    if (tr) openRecord(tr.getAttribute('data-id'));
+});
+$('cards').addEventListener('click', function (e) {
+    const c = e.target.closest('.card[data-id]');
+    if (c) openRecord(c.getAttribute('data-id'));
+});
+document.querySelectorAll('.journal th.sortable').forEach(function (th) {
+    th.addEventListener('click', function () {
+        const k = th.getAttribute('data-sort');
+        if (sortKey === k) sortDir = -sortDir;
+        else { sortKey = k; sortDir = (k === 'name' || k === 'place') ? 1 : -1; }
+        renderList();
+    });
+});
+
+// ============================================================
+// ВЫБОР НЕСКОЛЬКИХ
+// ============================================================
+
+function toggleSel(id, on) {
+    if (on) selected.add(id); else selected.delete(id);
+    document.querySelectorAll('[data-id="' + CSS.escape(id) + '"]').forEach(function (el) {
+        el.classList.toggle('selected', on);
+        const cb = el.querySelector('input[type=checkbox]');
+        if (cb) cb.checked = on;
+    });
+    updateSelbar(); syncChkAll();
+}
+function toggleAll(on) {
+    filtered.slice(0, shownLimit).forEach(function (r) { if (on) selected.add(r.id); else selected.delete(r.id); });
+    renderList(); updateSelbar();
+}
+function syncChkAll() {
+    const part = filtered.slice(0, shownLimit);
+    const n = part.filter(function (r) { return selected.has(r.id); }).length;
+    const c = $('chkAll');
+    c.checked = part.length > 0 && n === part.length;
+    c.indeterminate = n > 0 && n < part.length;
+}
+function clearSelection() { selected.clear(); renderList(); updateSelbar(); }
+function updateSelbar() {
+    $('selCount').textContent = selected.size;
+    $('selbar').classList.toggle('show', selected.size > 0);
+}
+
+// ============================================================
+// ПОЛЕ ДАТЫ: дд.мм.гггг + «Сегодня» + календарь + очистить
+// ============================================================
+
+function buildDateField(wrap, id, onChange) {
+    wrap.innerHTML =
+        '<input class="date-text" id="' + id + '" inputmode="numeric" placeholder="дд.мм.гггг" maxlength="10">' +
+        '<button type="button" class="date-btn today" title="Поставить сегодняшнюю дату">Сегодня</button>' +
+        '<button type="button" class="date-btn cal" title="Календарь">📅</button>' +
+        '<button type="button" class="date-btn clr" title="Очистить">✕</button>' +
+        '<input type="date" class="date-native" tabindex="-1" aria-hidden="true">';
+    const txt = wrap.querySelector('.date-text'), nat = wrap.querySelector('.date-native');
+    txt.addEventListener('input', function () {
+        const pos = txt.value.length;
+        txt.value = maskRuDate(txt.value);
+        if (onChange) onChange();
+    });
+    txt.addEventListener('blur', function () {
+        const iso = ruToIso(txt.value);
+        if (iso) txt.value = isoToRu(iso);
+        if (onChange) onChange();
+    });
+    wrap.querySelector('.today').addEventListener('click', function () { txt.value = isoToRu(todayIso()); if (onChange) onChange(); });
+    wrap.querySelector('.clr').addEventListener('click', function () { txt.value = ''; if (onChange) onChange(); });
+    wrap.querySelector('.cal').addEventListener('click', function () {
+        const iso = ruToIso(txt.value);
+        nat.value = iso || todayIso();
+        try { nat.showPicker(); } catch (e) { nat.style.pointerEvents = 'auto'; nat.focus(); nat.click(); }
+    });
+    nat.addEventListener('change', function () { if (nat.value) { txt.value = isoToRu(nat.value); if (onChange) onChange(); } });
+}
+function setDateField(id, iso) { $(id).value = iso ? isoToRu(iso) : ''; }
+function getDateField(id) { return ruToIso($(id).value); }
+function setDateFieldDisabled(id, dis) {
+    const wrap = $(id).parentNode;
+    wrap.querySelectorAll('input, button').forEach(function (el) { el.disabled = dis; });
+}
+
+// ============================================================
+// КАРТОЧКА ПРИБОРА
+// ============================================================
+
+(function initStageBoxes() {
+    $('stageBoxes').innerHTML = STAGES.map(function (s, i) {
+        return '<div class="stage-box"><label><span class="n">' + (i + 1) + '</span>' + esc(s.title.slice(3)) + '</label>' +
+            '<div class="date-field" id="wrap_' + s.key + '"></div></div>';
+    }).join('');
+    STAGES.forEach(function (s) { buildDateField($('wrap_' + s.key), 'r_' + s.key, updatePreview); });
+    buildDateField($('bDateWrap'), 'bDate', null);
+    buildDateField($('pFromWrap'), 'pFrom', updatePrintInfo);
+    buildDateField($('pToWrap'), 'pTo', updatePrintInfo);
+})();
+
+function readForm() {
+    const r = {
+        name: $('rName').value.replace(/\s+/g, ' ').trim(),
+        serial: $('rSerial').value.trim(),
+        place: $('rPlace').value.replace(/\s+/g, ' ').trim(),
+        result: $('rResult').value,
+        note: $('rNote').value.trim(),
+        by: $('rBy').value
+    };
+    let bad = '';
+    STAGES.forEach(function (s) {
+        const v = getDateField('r_' + s.key);
+        if (v === null && !bad) bad = 'Неверная дата в этапе «' + s.title + '» - нужно дд.мм.гггг';
+        r[s.key] = v || '';
+    });
+    r._err = bad;
+    return r;
+}
+
+function updatePreview() {
+    const r = readForm();
+    const err = r._err || validateRec(r);
+    const st = calcStatus(r), days = calcDays(r);
+    $('recPreview').innerHTML = err && (r.name || r.d1 || r.d2 || r.d3 || r.d4)
+        ? '<span class="err">⚠ ' + esc(err) + '</span>'
+        : 'Статус: ' + statusChip({ status: st, days: days }) +
+          '<span>Дней всего: <b>' + (days === '' ? '—' : days) + '</b></span>';
+}
+
+function openRecord(id) {
+    currentRec = id ? records.find(function (r) { return r.id === id; }) || null : null;
+    if (id && !currentRec) { showToast('Запись не найдена - обновите журнал', 'error'); return; }
+    const r = currentRec || {};
+    const isNew = !currentRec;
+    if (isNew) newClientId = newId('c');
+
+    $('recTitle').textContent = isNew ? 'Новый прибор' : '№ ' + r.num + ' · ' + r.name;
+    $('rName').value = r.name || '';
+    $('rSerial').value = r.serial || '';
+    $('rPlace').value = r.place || '';
+    $('rResult').value = r.result || '';
+    $('rNote').value = r.note || '';
+    byOptions($('rBy'));
+    STAGES.forEach(function (s) { setDateField('r_' + s.key, r[s.key] || ''); });
+    if (isNew) setDateField('r_d1', todayIso());
+
+    const locked = !!r.locked;
+    const readOnly = locked && !isAdmin();
+    ['rName', 'rSerial', 'rPlace', 'rResult', 'rNote', 'rBy'].forEach(function (f) { $(f).disabled = readOnly; });
+    STAGES.forEach(function (s) { setDateFieldDisabled('r_' + s.key, readOnly); });
+
+    let notice = '';
+    if (locked && !isAdmin()) {
+        notice = '<div class="notice lock">🔒 Запись закрыта: прибор выдан в цех больше ' + settings.lockDays +
+            ' дней назад. Исправить может только администратор.</div>';
+    } else if (locked && isAdmin()) {
+        notice = '<div class="notice lock">🔒 Запись закрыта для метрологов. Вы можете исправить её как администратор - ' +
+            'в колонку «Изменения» добавится пометка о корректировке.</div>';
+    }
+    $('recNotice').innerHTML = notice;
+
+    $('rChangesWrap').style.display = r.changes ? '' : 'none';
+    $('rChanges').textContent = r.changes || '';
+    $('recAudit').innerHTML = isNew ? '' :
+        'Внёс: ' + esc(r.createdBy || '—') + (r.createdAt ? ', ' + esc(r.createdAt) : '') +
+        (r.updatedBy ? '<br>Последнее изменение: ' + esc(r.updatedBy) + ', ' + esc(r.updatedAt) : '');
+
+    $('recDelete').style.display = !isNew && isAdmin() ? '' : 'none';
+    $('recHistory').style.display = !isNew && isAdmin() ? '' : 'none';
+    $('recSaveMore').style.display = isNew ? '' : 'none';
+    $('recSave').style.display = readOnly ? 'none' : '';
+    updatePreview();
+    openModal('recordModal');
+    if (isNew) setTimeout(function () { $('rName').focus(); }, 50);
+}
+
+async function saveRecord(more) {
+    const r = readForm();
+    const err = r._err || validateRec(r);
+    if (err) { showToast(err, 'error'); updatePreview(); return; }
+    const isNew = !currentRec;
+    const data = {
+        id: isNew ? '' : currentRec.id,
+        stamp: isNew ? '' : currentRec.stamp,
+        clientId: isNew ? newClientId : '',
+        name: r.name, serial: r.serial, place: r.place,
+        d1: r.d1, d2: r.d2, d3: r.d3, d4: r.d4,
+        result: r.result, note: r.note, by: r.by
+    };
+    $('recSave').disabled = true; $('recSaveMore').disabled = true;
+    showLoading();
+    const res = await apiRequest({ action: 'save', password: me.password, data: JSON.stringify(data) });
+    hideLoading();
+    $('recSave').disabled = false; $('recSaveMore').disabled = false;
+
+    if (res && res.success) {
+        upsert(res.record);
+        renderAll();
+        if (res.unchanged) showToast('Изменений нет', 'info');
+        else showToast(isNew ? 'Прибор № ' + res.record.num + ' внесён' : 'Сохранено', 'success');
+        if (more && isNew) {
+            // следующий прибор: то же место, та же дата этапа 1, наименование оставляем
+            currentRec = null;
+            newClientId = newId('c');
+            $('rSerial').value = '';
+            $('rNote').value = '';
+            ['d2', 'd3', 'd4'].forEach(function (k) { setDateField('r_' + k, ''); });
+            $('recTitle').textContent = 'Новый прибор (следующий)';
+            updatePreview();
+            $('rSerial').focus();
+        } else {
+            closeModal('recordModal');
+        }
+        return;
+    }
+    if (res && res.record && (res.conflict || res.locked)) {
+        upsert(res.record);
+        renderAll();
+        showToast(res.error, 'error');
+        openRecord(res.record.id);
+        return;
+    }
+    if (res && res.gone && currentRec) {
+        records = records.filter(function (x) { return x.id !== currentRec.id; });
+        renderAll();
+        closeModal('recordModal');
+    }
+    showToast((res && res.error) || 'Не удалось сохранить', 'error');
+}
+
+function upsert(rec) {
+    const i = records.findIndex(function (x) { return x.id === rec.id; });
+    if (i >= 0) records[i] = rec; else records.push(rec);
+}
+
+async function deleteRecord() {
+    if (!currentRec || !isAdmin()) return;
+    if (!confirm('Удалить запись № ' + currentRec.num + ' «' + currentRec.name + '»? Это действие попадёт в журнал правок.')) return;
+    showLoading();
+    const res = await apiRequest({ action: 'delete', password: me.password, id: currentRec.id });
+    hideLoading();
+    if (res && (res.success || res.gone)) {
+        const id = currentRec.id;
+        records = records.filter(function (x) { return x.id !== id; });
+        selected.delete(id);
+        updateSelbar();
+        renderAll();
+        closeModal('recordModal');
+        showToast('Запись удалена', 'success');
+    } else {
+        showToast((res && res.error) || 'Не удалось удалить', 'error');
+    }
+}
+
+// ============================================================
+// ОТМЕТКА ЭТАПА ДЛЯ НЕСКОЛЬКИХ
+// ============================================================
+
+function selectedRecords() {
+    return records.filter(function (r) { return selected.has(r.id); }).sort(function (a, b) { return a.num - b.num; });
+}
+
+function suggestStage(list) {
+    // следующий этап для большинства выбранных
+    const cnt = [0, 0, 0, 0, 0];
+    list.forEach(function (r) {
+        const next = !r.d1 ? 1 : (!r.d2 && !r.d3 && !r.d4 ? 2 : (!r.d3 && !r.d4 ? 3 : 4));
+        cnt[next]++;
+    });
+    let best = 1;
+    for (let i = 1; i <= 4; i++) if (cnt[i] > cnt[best]) best = i;
+    return best;
+}
+
+function openBulk() {
+    const list = selectedRecords();
+    if (!list.length) return;
+    const locked = list.filter(function (r) { return r.locked; }).length;
+    $('bulkList').innerHTML = list.map(function (r) {
+        return '<div>№ ' + r.num + ' · ' + esc(r.name) + (r.serial ? ' (зав. № ' + esc(r.serial) + ')' : '') +
+            ' — <span style="color:#888">' + esc(r.status) + '</span>' + (r.locked ? ' 🔒' : '') + '</div>';
+    }).join('');
+    $('bStage').value = String(suggestStage(list));
+    setDateField('bDate', todayIso());
+    $('bResult').value = 'keep';
+    byOptions($('bBy'));
+    onBulkStage();
+    $('bulkResult').innerHTML = locked && !isAdmin()
+        ? '<div class="notice lock">🔒 ' + locked + ' из выбранных закрыты - их пропустим.</div>' : '';
+    $('bulkApply').disabled = false;
+    openModal('bulkModal');
+}
+
+function onBulkStage() {
+    // примечание «Поверен / Не прошёл» уместно с этапа 3 - подсказываем, но не ставим сами
+    const s = Number($('bStage').value);
+    $('bResult').parentNode.style.opacity = s >= 3 ? '1' : '0.6';
+}
+
+async function applyBulk() {
+    const date = getDateField('bDate');
+    if (date === null) { showToast('Дата должна быть в виде дд.мм.гггг', 'error'); return; }
+    const ids = Array.from(selected);
+    const stage = Number($('bStage').value);
+    if (!date && !confirm('Дата пустая - этап ' + stage + ' будет очищен у ' + ids.length + ' приборов. Продолжить?')) return;
+    $('bulkApply').disabled = true;
+    showLoading();
+    const res = await apiRequest({
+        action: 'bulk', password: me.password,
+        data: JSON.stringify({ ids: ids, stage: stage, date: date, result: $('bResult').value, by: $('bBy').value })
+    });
+    hideLoading();
+    $('bulkApply').disabled = false;
+    if (!res || !res.success) { showToast((res && res.error) || 'Не удалось сохранить', 'error'); return; }
+    (res.updated || []).forEach(upsert);
+    const okIds = new Set((res.updated || []).map(function (r) { return r.id; }));
+    okIds.forEach(function (id) { selected.delete(id); });
+    updateSelbar();
+    renderAll();
+    if (res.errors && res.errors.length) {
+        $('bulkResult').innerHTML = '<div class="notice err">Сохранено: ' + okIds.size + '. Не сохранено: ' + res.errors.length +
+            ' (остались выбранными):<br>' + res.errors.map(function (e) {
+                return (e.num ? '№ ' + e.num + ' — ' : '') + esc(e.error);
+            }).join('<br>') + '</div>';
+        $('bulkList').innerHTML = '';
+        showToast('Сохранено ' + okIds.size + ', с ошибками ' + res.errors.length, 'error');
+    } else {
+        closeModal('bulkModal');
+        showToast('Этап отмечен у ' + okIds.size + ' приборов', 'success');
+    }
+}
+
+// ============================================================
+// ПЕЧАТЬ НЕДЕЛИ
+// ============================================================
+
+function weekStart(iso) {
+    const n = dayNum(iso);
+    const dow = (new Date(n * 86400000).getUTCDay() + 6) % 7; // пн = 0
+    return isoFromDayNum(n - dow);
+}
+function isoWeek(iso) {
+    const n = dayNum(iso);
+    const d = new Date(n * 86400000);
+    const dow = (d.getUTCDay() + 6) % 7;
+    const thursday = n - dow + 3;
+    const th = new Date(thursday * 86400000);
+    const jan1 = Date.UTC(th.getUTCFullYear(), 0, 1) / 86400000;
+    return Math.floor((thursday - jan1) / 7) + 1;
+}
+
+function openPrint() {
+    const ws = weekStart(todayIso());
+    setDateField('pFrom', ws);
+    setDateField('pTo', isoFromDayNum(dayNum(ws) + 6));
+    const pl = allPlaces();
+    $('pPlace').innerHTML = '<option value="">Все</option>' + pl.map(function (p) { return '<option>' + esc(p) + '</option>'; }).join('');
+    $('pPlace').value = $('fPlace').value || '';
+    byOptions($('pSigner'));
+    $('pSigner').insertAdjacentHTML('afterbegin', '<option value="">— пустая строка для подписи —</option>');
+    $('pSigner').value = me.name;
+    updatePrintInfo();
+    openModal('printModal');
+}
+
+function shiftWeek(days) {
+    const f = getDateField('pFrom') || weekStart(todayIso());
+    const from = isoFromDayNum(dayNum(weekStart(f)) + days);
+    setDateField('pFrom', from);
+    setDateField('pTo', isoFromDayNum(dayNum(from) + 6));
+    updatePrintInfo();
+}
+
+function printRows() {
+    const from = getDateField('pFrom'), to = getDateField('pTo');
+    if (!from || !to || from > to) return null;
+    const pl = $('pPlace') ? $('pPlace').value : '';
+    const withOpen = $('pOpen').checked;
+    return records.filter(function (r) {
+        if (pl && r.place !== pl) return false;
+        const moved = STAGES.some(function (s) { return r[s.key] && r[s.key] >= from && r[s.key] <= to; });
+        const open = withOpen && r.d1 && !r.d4 && r.d1 <= to;
+        return moved || open;
+    }).sort(function (a, b) { return a.num - b.num; });
+}
+
+function updatePrintInfo() {
+    const rows = printRows();
+    if (!$('pInfo')) return;
+    if (!rows) { $('pInfo').textContent = 'Укажите период: даты «с» и «по» в виде дд.мм.гггг'; return; }
+    const from = getDateField('pFrom');
+    $('pInfo').textContent = 'Неделя № ' + isoWeek(from) + ' · в журнал попадёт приборов: ' + rows.length +
+        '. Даты движения внутри периода будут подчёркнуты.';
+}
+$('pOpen').addEventListener('change', updatePrintInfo);
+$('pPlace').addEventListener('change', updatePrintInfo);
+
+function doPrint() {
+    const rows = printRows();
+    if (!rows) { showToast('Проверьте период', 'error'); return; }
+    if (!rows.length && !confirm('За этот период движения нет. Всё равно напечатать пустой журнал?')) return;
+    const from = getDateField('pFrom'), to = getDateField('pTo');
+    const pl = $('pPlace').value, signer = $('pSigner').value;
+    const fp = from.split('-'), tp = to.split('-');
+    const period = 'на ' + isoWeek(from) + '-ю неделю с ' + fp[2] + '.' + fp[1] + (fp[0] !== tp[0] ? '.' + fp[0] : '') +
+        ' по ' + tp[2] + '.' + tp[1] + '.' + tp[0] + ' г.';
+    function dc(iso) {
+        if (!iso) return '<td class="c"></td>';
+        const hl = iso >= from && iso <= to;
+        return '<td class="c' + (hl ? ' hl' : '') + '">' + isoToRu(iso) + '</td>';
+    }
+    const now = new Date();
+    $('printArea').innerHTML =
+        '<div class="p-head">Журнал движения средств измерений при поверке в ЦСМ<br>' + esc(settings.org) + '<br>' + esc(period) + '</div>' +
+        '<div class="p-sub">' + (pl ? 'Цех / место: ' + esc(pl) + ' · ' : '') + 'Приборов: ' + rows.length +
+            ' · Сформировано ' + isoToRu(localIso(now)) + ' ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + '</div>' +
+        '<table class="p-table"><thead><tr>' +
+            '<th>№</th><th>Наименование СИ</th><th>Зав. №</th><th>Цех / место</th>' +
+            '<th>1. Цех→<br>Метрология</th><th>2. Метрология<br>→ЦСМ</th><th>3. ЦСМ→<br>Метрология</th><th>4. Метрология<br>→Цех</th>' +
+            '<th>Дней<br>всего</th><th>Статус</th><th>Примечание</th><th>Дополнение</th>' +
+        '</tr></thead><tbody>' +
+        rows.map(function (r) {
+            return '<tr><td class="c">' + r.num + '</td><td>' + esc(r.name) + '</td><td>' + esc(r.serial) + '</td><td>' + esc(r.place) + '</td>' +
+                dc(r.d1) + dc(r.d2) + dc(r.d3) + dc(r.d4) +
+                '<td class="c">' + esc(r.days) + '</td><td>' + esc(r.status) + '</td><td>' + esc(r.result) + '</td>' +
+                '<td class="note">' + esc(r.note) + '</td></tr>';
+        }).join('') +
+        '</tbody></table>' +
+        '<div class="p-sign"><span>Ответственный: ____________________ / ' + (signer ? esc(signer) : '____________________') + ' /</span>' +
+        '<span>Дата: ____.____.20____</span></div>';
+    closeModal('printModal');
+    setTimeout(function () { window.print(); }, 100);
+}
+
+// ============================================================
+// ЖУРНАЛ ПРАВОК (администратор)
+// ============================================================
+
+async function openLog(id) {
+    if (!isAdmin()) return;
+    showLoading();
+    const res = await apiRequest({ action: 'log', password: me.password, id: id || '' });
+    hideLoading();
+    if (!res || !res.success) { showToast((res && res.error) || 'Не удалось загрузить журнал', 'error'); return; }
+    logEntries = res.entries || [];
+    const rec = id ? records.find(function (r) { return r.id === id; }) : null;
+    $('logTitle').textContent = rec ? 'История записи № ' + rec.num : 'Журнал правок (последние ' + logEntries.length + ')';
+    $('logSearch').value = '';
+    renderLog();
+    openModal('logModal');
+}
+
+function renderLog() {
+    const q = $('logSearch').value.trim().toLowerCase();
+    const list = logEntries.filter(function (e) {
+        return !q || (e.who + ' ' + e.num + ' ' + e.action + ' ' + e.field + ' ' + e.from + ' ' + e.to).toLowerCase().indexOf(q) >= 0;
+    });
+    $('logList').innerHTML = list.length ? list.map(function (e) {
+        let what = '';
+        if (e.field) what = '<b>' + esc(e.field) + '</b>: ' + (e.from ? '<span class="from">' + esc(e.from) + '</span> → ' : '') +
+            (e.to ? '<span class="to">' + esc(e.to) + '</span>' : '<i>очищено</i>');
+        else what = esc(e.to || e.from);
+        return '<div class="log-item"><span class="when">' + esc(e.when) + '</span> · <span class="who">' + esc(e.who) + '</span>' +
+            ' <span class="when">(' + esc(e.role) + ')</span> · № ' + esc(e.num) + ' · ' + esc(e.action) + '<br>' + what + '</div>';
+    }).join('') : '<div class="empty">Записей нет</div>';
+}
+
+// ============================================================
+// ОКНА
+// ============================================================
+
+function openModal(id) { $(id).classList.add('active'); }
+function closeModal(id) { $(id).classList.remove('active'); }
+document.querySelectorAll('.modal-overlay').forEach(function (m) {
+    m.addEventListener('mousedown', function (e) { if (e.target === m) m.classList.remove('active'); });
+});
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+        const open = document.querySelectorAll('.modal-overlay.active');
+        if (open.length) open[open.length - 1].classList.remove('active');
+    }
+});
+$('passwordInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') handleLogin(); });
+window.addEventListener('afterprint', function () { $('printArea').innerHTML = ''; });
+
+checkSession();
+</script>
+</body>
+</html>
